@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-downloadable-apps:
-    name: Build downloadable enterprise app ${{ matrix.macos }} level ${{ matrix.level }}
+    name: Build signed downloadable enterprise app ${{ matrix.macos }} level ${{ matrix.level }}
     runs-on: ${{ matrix.macos }}
     timeout-minutes: 20
 
@@ -31,7 +31,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build enterprise native app bundle
+      - name: Build, ad-hoc sign, zip, and test app bundle
         run: |
           set -euxo pipefail
           mkdir -p "$RESULT_DIR"
@@ -74,12 +74,7 @@ jobs:
               }
 
               func buildUI() {
-                  window = NSWindow(
-                      contentRect: NSRect(x: 70, y: 80, width: 1220, height: 780),
-                      styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                      backing: .buffered,
-                      defer: false
-                  )
+                  window = NSWindow(contentRect: NSRect(x: 70, y: 80, width: 1220, height: 780), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
                   window.title = "Downloadable Enterprise Admin Console - Level \(level)"
                   window.minSize = NSSize(width: 900, height: 600)
 
@@ -184,17 +179,44 @@ jobs:
           </plist>
           PLIST
 
+          cat > "$APP_ROOT/README-OPENING.txt" <<README
+          This test app is ad-hoc signed, but it is not notarized with an Apple Developer ID.
+
+          If macOS says the app is damaged or cannot be opened after download, remove the download quarantine attribute:
+
+            xattr -dr com.apple.quarantine "${APP_NAME}.app"
+            open "${APP_NAME}.app"
+
+          This is expected for unsigned/notarization-free test builds downloaded from GitHub.
+          README
+
           xcrun swiftc EnterpriseDownloadableApp.swift -framework AppKit -O -o "$APP_ROOT/Contents/MacOS/EnterpriseDownloadableApp"
+          chmod +x "$APP_ROOT/Contents/MacOS/EnterpriseDownloadableApp"
 
-          ditto -c -k --sequesterRsrc --keepParent "$APP_ROOT" "$RESULT_DIR/${APP_NAME}.app.zip"
-          shasum -a 256 "$RESULT_DIR/${APP_NAME}.app.zip" > "$RESULT_DIR/${APP_NAME}.app.zip.sha256"
+          # Ad-hoc sign the bundle so Gatekeeper sees a coherent code signature.
+          codesign --force --deep --sign - "$APP_ROOT"
+          codesign --verify --deep --strict --verbose=2 "$APP_ROOT"
 
+          # Verify the app can launch on the runner before zipping.
           ENTERPRISE_APP_LEVEL="$LEVEL" open -n "$APP_ROOT"
           sleep 4
           screencapture -x "$RESULT_DIR/${APP_NAME}.preview.png" || true
           osascript -e 'tell application "'"${APP_NAME}"'" to quit' || true
           sleep 1
           pkill -f EnterpriseDownloadableApp || true
+
+          # Preserve the .app bundle structure and resource forks.
+          ditto -c -k --sequesterRsrc --keepParent "$APP_ROOT" "$RESULT_DIR/${APP_NAME}.app.zip"
+          shasum -a 256 "$RESULT_DIR/${APP_NAME}.app.zip" > "$RESULT_DIR/${APP_NAME}.app.zip.sha256"
+
+          cat > "$RESULT_DIR/open-after-download.sh" <<SCRIPT
+          #!/bin/zsh
+          set -euo pipefail
+          APP="${APP_NAME}.app"
+          xattr -dr com.apple.quarantine "\$APP" 2>/dev/null || true
+          open "\$APP"
+          SCRIPT
+          chmod +x "$RESULT_DIR/open-after-download.sh"
 
           ROWS=$(python3 - <<PY
           level=int("$LEVEL")
@@ -221,7 +243,11 @@ jobs:
             "app_zip": "$RESULT_DIR/${APP_NAME}.app.zip",
             "app_zip_bytes": int("$BYTES"),
             "sha256": "$SHA256",
-            "preview": "$RESULT_DIR/${APP_NAME}.preview.png"
+            "preview": "$RESULT_DIR/${APP_NAME}.preview.png",
+            "open_script": "$RESULT_DIR/open-after-download.sh",
+            "signature": "ad-hoc signed with codesign --sign -",
+            "notarized": False,
+            "quarantine_note": "If macOS reports damaged, run xattr -dr com.apple.quarantine on the .app after unzipping."
           }
           open("$RESULT_DIR/app.json", "w").write(json.dumps(data, indent=2, sort_keys=True))
           PY
@@ -277,12 +303,13 @@ jobs:
           with out.open("w") as f:
               f.write("# macOS Enterprise UI Downloadable App Bundles\n\n")
               f.write(f"Total app bundles: {len(rows)}\n\n")
-              f.write("| Runner | macOS | Level | Rows | Memory MB | App zip | Size bytes | SHA-256 | Preview |\n")
-              f.write("|---|---|---:|---:|---:|---|---:|---|---|\n")
+              f.write("These apps are ad-hoc signed for test use, but they are not Apple-notarized. If macOS reports an app is damaged after download, unzip it and run `xattr -dr com.apple.quarantine EnterpriseDownloadableLevelX.app`, or use the included `open-after-download.sh`.\n\n")
+              f.write("| Runner | macOS | Level | Rows | Memory MB | App zip | Size bytes | SHA-256 | Preview | Open script |\n")
+              f.write("|---|---|---:|---:|---:|---|---:|---|---|---|\n")
               for r in rows:
                   f.write(
                       f"| {r['runner']} | {r['macOS']} | {r['level']} | {r['rows']} | {r['configured_memory_mb']} | "
-                      f"[{r['app_zip']}]({r['app_zip']}) | {r['app_zip_bytes']} | `{r['sha256']}` | [{r['preview']}]({r['preview']}) |\n"
+                      f"[{r['app_zip']}]({r['app_zip']}) | {r['app_zip_bytes']} | `{r['sha256']}` | [{r['preview']}]({r['preview']}) | [{r['open_script']}]({r['open_script']}) |\n"
                   )
           print(out.read_text())
           PY
@@ -298,6 +325,6 @@ jobs:
             echo "No downloadable app changes to commit."
             exit 0
           fi
-          git commit -m "Add downloadable macOS enterprise UI app bundles"
+          git commit -m "Add ad-hoc signed downloadable macOS app bundles"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
