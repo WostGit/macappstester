@@ -1,0 +1,419 @@
+name: macOS Enterprise Native UI Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs_per_level:
+        description: "How many times to repeat each level"
+        required: true
+        default: "1"
+  push:
+    branches: [main, master]
+    paths:
+      - ".github/workflows/macos-enterprise-ui-test.yml"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  enterprise-ui-test:
+    name: Enterprise UI ${{ matrix.macos }} level ${{ matrix.level }}
+    runs-on: ${{ matrix.macos }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        macos: [macos-14, macos-15]
+        level: [1, 3, 5]
+
+    env:
+      RUNS_PER_LEVEL: ${{ github.event.inputs.runs_per_level || '1' }}
+      LEVEL: ${{ matrix.level }}
+      RESULT_DIR: macos-enterprise-ui-results/${{ matrix.macos }}/level-${{ matrix.level }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build enterprise-style native AppKit app
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RESULT_DIR"
+
+          cat > EnterpriseUITestApp.swift <<'SWIFT'
+          import AppKit
+          import Foundation
+
+          final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate {
+              var window: NSWindow!
+              var splitView: NSSplitView!
+              var contentView = NSView()
+              var tableView = NSTableView()
+              var rows: [[String]] = []
+              var memory: [Data] = []
+              var currentStage = "login"
+              var level = 1
+
+              func applicationDidFinishLaunching(_ notification: Notification) {
+                  level = Int(ProcessInfo.processInfo.environment["ENTERPRISE_LEVEL"] ?? "1") ?? 1
+                  buildData()
+                  buildWindow()
+                  showLogin()
+                  scheduleEnterpriseFlow()
+              }
+
+              func buildData() {
+                  let rowCount: Int
+                  let memoryMB: Int
+                  switch level {
+                  case 1:
+                      rowCount = 5_000; memoryMB = 64
+                  case 3:
+                      rowCount = 35_000; memoryMB = 192
+                  default:
+                      rowCount = 100_000; memoryMB = 512
+                  }
+                  for i in 0..<memoryMB { memory.append(Data(repeating: UInt8(i % 253), count: 1024 * 1024)) }
+                  rows = (0..<rowCount).map { i in
+                      ["USR-\(100000 + i)", "Employee \(i)", i % 3 == 0 ? "Admin" : "Standard", i % 5 == 0 ? "Locked" : "Active", "2026-06-\((i % 28) + 1)"]
+                  }
+              }
+
+              func buildWindow() {
+                  window = NSWindow(contentRect: NSRect(x: 70, y: 80, width: 1180, height: 760), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+                  window.title = "Contoso Enterprise Admin Console - Level \(level)"
+                  window.minSize = NSSize(width: 900, height: 600)
+                  let toolbar = NSToolbar(identifier: "EnterpriseToolbar")
+                  toolbar.displayMode = .iconAndLabel
+                  window.toolbar = toolbar
+                  window.makeKeyAndOrderFront(nil)
+              }
+
+              func replaceContent(_ view: NSView) {
+                  window.contentView = view
+                  window.makeKeyAndOrderFront(nil)
+              }
+
+              func label(_ text: String, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat = 22, bold: Bool = false, size: CGFloat = 13) -> NSTextField {
+                  let f = NSTextField(labelWithString: text)
+                  f.frame = NSRect(x: x, y: y, width: w, height: h)
+                  f.font = bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size)
+                  return f
+              }
+
+              func showLogin() {
+                  currentStage = "login"
+                  let root = NSView(frame: NSRect(x: 0, y: 0, width: 1180, height: 760))
+                  let card = NSBox(frame: NSRect(x: 365, y: 220, width: 450, height: 310))
+                  card.title = "Enterprise SSO"
+                  root.addSubview(card)
+                  card.contentView?.addSubview(label("Contoso Enterprise Admin", x: 30, y: 230, w: 360, h: 30, bold: true, size: 22))
+                  card.contentView?.addSubview(label("Username", x: 30, y: 185, w: 120))
+                  let user = NSTextField(frame: NSRect(x: 30, y: 158, width: 380, height: 28)); user.stringValue = "admin@example.com"
+                  card.contentView?.addSubview(user)
+                  card.contentView?.addSubview(label("Password", x: 30, y: 122, w: 120))
+                  let pass = NSSecureTextField(frame: NSRect(x: 30, y: 95, width: 380, height: 28)); pass.stringValue = "enterprise-test"
+                  card.contentView?.addSubview(pass)
+                  let button = NSButton(title: "Sign in", target: nil, action: nil)
+                  button.frame = NSRect(x: 300, y: 40, width: 110, height: 32); button.bezelStyle = .rounded
+                  card.contentView?.addSubview(button)
+                  replaceContent(root)
+              }
+
+              func showDashboard() {
+                  currentStage = "dashboard"
+                  let root = NSView(frame: NSRect(x: 0, y: 0, width: 1180, height: 760))
+                  splitView = NSSplitView(frame: root.bounds)
+                  splitView.isVertical = true
+                  splitView.autoresizingMask = [.width, .height]
+                  root.addSubview(splitView)
+
+                  let sidebar = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 760))
+                  sidebar.addSubview(label("Admin Console", x: 20, y: 710, w: 170, bold: true, size: 18))
+                  let nav = ["Dashboard", "Users", "Devices", "Policies", "Audit Logs", "Reports", "Settings"]
+                  for (idx, item) in nav.enumerated() { sidebar.addSubview(label(item, x: 28, y: 660 - CGFloat(idx * 38), w: 160, h: 28, bold: idx == 0)) }
+
+                  contentView = NSView(frame: NSRect(x: 0, y: 0, width: 960, height: 760))
+                  contentView.addSubview(label("Enterprise Security Dashboard", x: 24, y: 710, w: 500, h: 32, bold: true, size: 24))
+                  let search = NSSearchField(frame: NSRect(x: 720, y: 710, width: 210, height: 28)); search.stringValue = "policy:active"
+                  contentView.addSubview(search)
+                  let cards = [("Users", "100K"), ("Devices", "24,391"), ("Policy drift", "2.7%"), ("Open alerts", "183")]
+                  for (i, c) in cards.enumerated() {
+                      let box = NSBox(frame: NSRect(x: 24 + CGFloat(i) * 230, y: 600, width: 210, height: 86))
+                      box.title = c.0
+                      box.contentView?.addSubview(label(c.1, x: 20, y: 24, w: 150, h: 32, bold: true, size: 26))
+                      contentView.addSubview(box)
+                  }
+                  let progress = NSProgressIndicator(frame: NSRect(x: 24, y: 560, width: 900, height: 18))
+                  progress.isIndeterminate = false; progress.minValue = 0; progress.maxValue = 100; progress.doubleValue = level == 5 ? 87 : 64
+                  contentView.addSubview(progress)
+                  contentView.addSubview(label("Live compliance scan, simulated API latency, policy sync, and audit ingestion", x: 24, y: 530, w: 700))
+
+                  splitView.addArrangedSubview(sidebar)
+                  splitView.addArrangedSubview(contentView)
+                  replaceContent(root)
+              }
+
+              func showUsersTable() {
+                  currentStage = "users-table"
+                  contentView.subviews.forEach { $0.removeFromSuperview() }
+                  contentView.addSubview(label("Users and Access Review", x: 24, y: 710, w: 500, h: 32, bold: true, size: 24))
+                  let filter = NSSearchField(frame: NSRect(x: 690, y: 712, width: 230, height: 28)); filter.stringValue = "status:active role:admin"
+                  contentView.addSubview(filter)
+                  let scroll = NSScrollView(frame: NSRect(x: 24, y: 70, width: 900, height: 620))
+                  tableView = NSTableView(frame: scroll.bounds)
+                  let columns = [("id", "User ID", 130), ("name", "Name", 230), ("role", "Role", 130), ("status", "Status", 130), ("date", "Last Login", 180)]
+                  for c in columns {
+                      let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(c.0))
+                      col.title = c.1; col.width = CGFloat(c.2)
+                      tableView.addTableColumn(col)
+                  }
+                  tableView.delegate = self; tableView.dataSource = self
+                  tableView.usesAlternatingRowBackgroundColors = true
+                  scroll.documentView = tableView; scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
+                  contentView.addSubview(scroll)
+                  contentView.addSubview(label("Rows loaded: \(rows.count). Sorting/filtering simulated in native NSTableView.", x: 24, y: 34, w: 700))
+                  tableView.reloadData()
+              }
+
+              func showSettingsSheet() {
+                  currentStage = "settings-sheet"
+                  let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 360), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                  sheet.title = "Policy Settings"
+                  let root = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 360))
+                  root.addSubview(label("Enterprise Policy Configuration", x: 24, y: 305, w: 400, h: 28, bold: true, size: 20))
+                  let items = ["Require FileVault", "Block unsigned kernel extensions", "Enforce screen lock", "Require passkeys", "Audit admin elevation"]
+                  for (i, item) in items.enumerated() {
+                      let cb = NSButton(checkboxWithTitle: item, target: nil, action: nil)
+                      cb.frame = NSRect(x: 28, y: 250 - CGFloat(i * 42), width: 360, height: 24)
+                      cb.state = i == 1 ? .off : .on
+                      root.addSubview(cb)
+                  }
+                  let save = NSButton(title: "Apply policy", target: nil, action: nil)
+                  save.frame = NSRect(x: 360, y: 24, width: 120, height: 32)
+                  root.addSubview(save)
+                  sheet.contentView = root
+                  window.beginSheet(sheet)
+              }
+
+              func showAuditLog() {
+                  currentStage = "audit-log"
+                  window.endSheet(window.sheets.first!)
+                  contentView.subviews.forEach { $0.removeFromSuperview() }
+                  contentView.addSubview(label("Audit Log Stream", x: 24, y: 710, w: 500, h: 32, bold: true, size: 24))
+                  let text = NSTextView(frame: NSRect(x: 24, y: 70, width: 900, height: 620))
+                  text.isEditable = false
+                  let count = level == 5 ? 2500 : (level == 3 ? 1000 : 250)
+                  text.string = (0..<count).map { i in "2026-06-05T12:\(String(format: "%02d", i % 60)):00Z  severity=\(i % 7 == 0 ? "WARN" : "INFO") actor=user\(i) action=policy.evaluate resource=device\(i % 333)" }.joined(separator: "\n")
+                  let scroll = NSScrollView(frame: NSRect(x: 24, y: 70, width: 900, height: 620))
+                  scroll.documentView = text; scroll.hasVerticalScroller = true
+                  contentView.addSubview(scroll)
+                  contentView.addSubview(label("Simulated audit events: \(count)", x: 24, y: 34, w: 350))
+              }
+
+              func scheduleEnterpriseFlow() {
+                  let duration = Double(ProcessInfo.processInfo.environment["ENTERPRISE_DURATION"] ?? "16") ?? 16
+                  DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { self.showDashboard() }
+                  DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { self.showUsersTable() }
+                  DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { self.showSettingsSheet() }
+                  DispatchQueue.main.asyncAfter(deadline: .now() + 11.0) { self.showAuditLog() }
+                  DispatchQueue.main.asyncAfter(deadline: .now() + duration) { NSApp.terminate(nil) }
+              }
+
+              func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
+              func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+                  let id = tableColumn?.identifier.rawValue ?? "id"
+                  let idx = ["id": 0, "name": 1, "role": 2, "status": 3, "date": 4][id] ?? 0
+                  let cell = NSTextField(labelWithString: rows[row][idx])
+                  cell.lineBreakMode = .byTruncatingTail
+                  return cell
+              }
+          }
+
+          let app = NSApplication.shared
+          let delegate = AppDelegate()
+          app.delegate = delegate
+          app.setActivationPolicy(.regular)
+          app.run()
+          SWIFT
+
+          APP_ROOT="$PWD/EnterpriseUITestLevel${LEVEL}.app"
+          mkdir -p "$APP_ROOT/Contents/MacOS"
+          cat > "$APP_ROOT/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>EnterpriseUITestApp</string>
+            <key>CFBundleIdentifier</key><string>com.wostgit.macappstester.enterprise.level${LEVEL}</string>
+            <key>CFBundleName</key><string>EnterpriseUITestLevel${LEVEL}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>NSPrincipalClass</key><string>NSApplication</string>
+          </dict>
+          </plist>
+          PLIST
+
+          xcrun swiftc EnterpriseUITestApp.swift -framework AppKit -O -o "$APP_ROOT/Contents/MacOS/EnterpriseUITestApp"
+
+      - name: Run enterprise app and capture staged screenshots
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RESULT_DIR/screenshots"
+
+          {
+            echo "# Environment"
+            sw_vers
+            uname -a
+            xcodebuild -version || true
+          } | tee "$RESULT_DIR/environment.txt"
+
+          for run in $(seq 1 "$RUNS_PER_LEVEL"); do
+            APP="$PWD/EnterpriseUITestLevel${LEVEL}.app"
+            JSON="$RESULT_DIR/run-${run}.json"
+            LOG="$RESULT_DIR/run-${run}.log"
+            SHOT_DIR="$RESULT_DIR/screenshots/run-${run}"
+            mkdir -p "$SHOT_DIR"
+
+            START=$(python3 - <<'PY'
+          import time
+          print(time.time())
+          PY
+          )
+
+            ENTERPRISE_LEVEL="$LEVEL" ENTERPRISE_DURATION=18 open -n "$APP"
+            sleep 1.5; screencapture -x "$SHOT_DIR/01-login.png"; test -s "$SHOT_DIR/01-login.png"
+            sleep 3.0; screencapture -x "$SHOT_DIR/02-dashboard.png"; test -s "$SHOT_DIR/02-dashboard.png"
+            sleep 3.0; screencapture -x "$SHOT_DIR/03-users-table.png"; test -s "$SHOT_DIR/03-users-table.png"
+            sleep 3.0; screencapture -x "$SHOT_DIR/04-settings-sheet.png"; test -s "$SHOT_DIR/04-settings-sheet.png"
+            sleep 3.0; screencapture -x "$SHOT_DIR/05-audit-log.png"; test -s "$SHOT_DIR/05-audit-log.png"
+
+            osascript -e 'tell application "EnterpriseUITestLevel'"${LEVEL}"'" to quit' || true
+            sleep 2
+            pkill -f EnterpriseUITestApp || true
+
+            END=$(python3 - <<'PY'
+          import time
+          print(time.time())
+          PY
+          )
+            ELAPSED=$(python3 - <<PY
+          print(round(float("$END") - float("$START"), 3))
+          PY
+          )
+
+            TOTAL_BYTES=$(find "$SHOT_DIR" -name '*.png' -print0 | xargs -0 stat -f%z | awk '{s+=$1} END {print s+0}')
+            SCREENSHOT_COUNT=$(find "$SHOT_DIR" -name '*.png' | wc -l | tr -d ' ')
+            ROWS=$(python3 - <<PY
+          level=int("$LEVEL")
+          print(100000 if level == 5 else (35000 if level == 3 else 5000))
+          PY
+          )
+
+            {
+              echo "macOS enterprise native UI test"
+              echo "runner: ${{ matrix.macos }}"
+              echo "level: $LEVEL"
+              echo "run: $run"
+              echo "rows: $ROWS"
+              echo "screenshots: $SCREENSHOT_COUNT"
+              echo "screenshot_bytes_total: $TOTAL_BYTES"
+              echo "elapsed_seconds: $ELAPSED"
+              find "$SHOT_DIR" -name '*.png' -maxdepth 1 -print | sort
+            } | tee "$LOG"
+
+            python3 - <<PY
+          import json, subprocess
+          data = {
+              "runner": "${{ matrix.macos }}",
+              "macOS": subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip(),
+              "level": int("$LEVEL"),
+              "run": int("$run"),
+              "success": True,
+              "rows": int("$ROWS"),
+              "screenshots": int("$SCREENSHOT_COUNT"),
+              "screenshot_bytes_total": int("$TOTAL_BYTES"),
+              "elapsed_seconds": float("$ELAPSED"),
+              "screenshot_dir": "$SHOT_DIR"
+          }
+          open("$JSON", "w").write(json.dumps(data, indent=2, sort_keys=True))
+          PY
+          done
+
+      - name: Upload enterprise UI results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-enterprise-ui-results-${{ matrix.macos }}-level-${{ matrix.level }}
+          path: macos-enterprise-ui-results/
+          if-no-files-found: ignore
+
+  aggregate-enterprise-ui-results:
+    name: Aggregate and commit enterprise UI results
+    runs-on: ubuntu-latest
+    needs: enterprise-ui-test
+    if: always() && github.event_name != 'pull_request'
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Download enterprise UI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-enterprise-ui-results-*
+          path: downloaded-enterprise-ui-results
+          merge-multiple: true
+
+      - name: Aggregate enterprise UI results
+        run: |
+          set -euxo pipefail
+          rm -rf macos-enterprise-ui-results
+          mkdir -p macos-enterprise-ui-results
+          if [ -d downloaded-enterprise-ui-results/macos-enterprise-ui-results ]; then
+            cp -R downloaded-enterprise-ui-results/macos-enterprise-ui-results/. macos-enterprise-ui-results/
+          else
+            cp -R downloaded-enterprise-ui-results/. macos-enterprise-ui-results/ || true
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("macos-enterprise-ui-results")
+          rows = []
+          for path in sorted(root.glob("**/run-*.json")):
+              rows.append(json.loads(path.read_text()))
+          out = root / "summary.md"
+          with out.open("w") as f:
+              f.write("# macOS Enterprise Native UI Test Results\n\n")
+              f.write(f"Total runs: {len(rows)}\n\n")
+              f.write("| Runner | macOS | Level | Run | Rows | Screenshots | Screenshot bytes | Elapsed seconds | Screenshot dir |\n")
+              f.write("|---|---|---:|---:|---:|---:|---:|---:|---|\n")
+              for r in rows:
+                  f.write(f"| {r['runner']} | {r['macOS']} | {r['level']} | {r['run']} | {r['rows']} | {r['screenshots']} | {r['screenshot_bytes_total']} | {r['elapsed_seconds']:.3f} | `{r['screenshot_dir']}` |\n")
+          print(out.read_text())
+          PY
+          cat macos-enterprise-ui-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit enterprise UI results
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add macos-enterprise-ui-results/
+          if git diff --cached --quiet; then
+            echo "No enterprise UI result changes to commit."
+            exit 0
+          fi
+          git commit -m "Add macOS enterprise native UI test results"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
