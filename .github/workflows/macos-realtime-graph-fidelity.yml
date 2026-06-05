@@ -1,0 +1,101 @@
+name: macOS Realtime Graph Fidelity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/macos-realtime-graph-fidelity.yml"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  fidelity:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [numeric, appkit, heavy-redraw]
+    env:
+      MODE: ${{ matrix.mode }}
+      OUT: realtime-graph-fidelity-results/${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run graph mode
+        run: |
+          set -euxo pipefail
+          mkdir -p "$OUT"
+          cat > app.swift <<'SWIFT'
+          import AppKit
+          import Darwin
+          func memMB() -> Double {
+            var vm = task_vm_info_data_t(); var c = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+            let r = withUnsafeMutablePointer(to:&vm){p in p.withMemoryRebound(to:integer_t.self,capacity:Int(c)){task_info(mach_task_self_,task_flavor_t(TASK_VM_INFO),$0,&c)}}
+            return r == KERN_SUCCESS ? Double(vm.phys_footprint)/1048576.0 : -1
+          }
+          func cpuNs() -> UInt64 { var t=proc_taskinfo(); let n=proc_pidinfo(getpid(),Int32(PROC_PIDTASKINFO),0,&t,Int32(MemoryLayout<proc_taskinfo>.stride)); return n>0 ? UInt64(t.pti_total_user)+UInt64(t.pti_total_system) : 0 }
+          final class V:NSView{var mode="numeric";var text="";var cpu=[Double]();var mem=[Double]();override var isFlipped:Bool{true};override func draw(_ r:NSRect){NSColor.windowBackgroundColor.setFill();bounds.fill();let a:[NSAttributedString.Key:Any]=[.font:NSFont.monospacedDigitSystemFont(ofSize:18,weight:.semibold),.foregroundColor:NSColor.labelColor];text.draw(at:NSPoint(x:20,y:20),withAttributes:a);if mode != "numeric"{let plot=NSRect(x:20,y:120,width:bounds.width-40,height:bounds.height-150);NSColor.separatorColor.setStroke();NSBezierPath(rect:plot).stroke();func line(_ xs:[Double],_ maxv:Double,_ col:NSColor){guard xs.count>1 else{return};let p=NSBezierPath();for(i,v)in xs.enumerated(){let x=plot.minX+CGFloat(i)*plot.width/CGFloat(xs.count-1);let y=plot.maxY-CGFloat(min(max(v/maxv,0),1))*plot.height;i==0 ? p.move(to:NSPoint(x:x,y:y)) : p.line(to:NSPoint(x:x,y:y))};col.setStroke();p.lineWidth=2;p.stroke()};line(cpu,max(100,cpu.max() ?? 100),.systemBlue);line(mem,max(256,mem.max() ?? 256),.systemRed)}}}
+          final class D:NSObject,NSApplicationDelegate{let v=V();var keep=[Data]();var load=true;var last=cpuNs();var lastT=DispatchTime.now();var file:FileHandle?;func applicationDidFinishLaunching(_ n:Notification){let mode=ProcessInfo.processInfo.environment["MODE"] ?? "numeric";let path=ProcessInfo.processInfo.environment["SAMPLES"]!;FileManager.default.createFile(atPath:path,contents:"second,app_cpu_percent,app_memory_mb\n".data(using:.utf8));file=FileHandle(forWritingAtPath:path);v.mode=mode;for i in 0..<128{keep.append(Data(repeating:UInt8(i),count:1048576))};let w=NSWindow(contentRect:NSRect(x:80,y:80,width:820,height:520),styleMask:[.titled,.closable,.resizable],backing:.buffered,defer:false);w.title="Realtime graph fidelity \(mode) PID \(getpid())";v.frame=w.contentView!.bounds;v.autoresizingMask=[.width,.height];w.contentView!.addSubview(v);w.makeKeyAndOrderFront(nil);DispatchQueue.global().async{var x=0.0;while self.load{for i in 1...80000{x += sin(Double(i))};if x>1e12{x=0}}};Timer.scheduledTimer(withTimeInterval:1,repeats:true){_ in self.sample()}}
+          var sec=0;func sample(){sec += 1;let now=DispatchTime.now();let c=cpuNs();let wall=now.uptimeNanoseconds-lastT.uptimeNanoseconds;let pct=wall>0 ? Double(c-last)/Double(wall)*100:0;last=c;lastT=now;let m=memMB();v.cpu.append(pct);v.mem.append(m);if v.cpu.count>60{v.cpu.removeFirst();v.mem.removeFirst()};v.text=String(format:"mode %@\nPID %d\napp CPU %.1f%%\napp Memory %.1f MB\nblue CPU red memory",v.mode,getpid(),pct,m);v.needsDisplay=true;file?.write("\(sec),\(pct),\(m)\n".data(using:.utf8)!);if sec>=14{load=false;NSApp.terminate(nil)}}}
+          let app=NSApplication.shared;let d=D();app.delegate=d;app.setActivationPolicy(.regular);app.run()
+          SWIFT
+          APP="GraphFidelity-${MODE}"
+          ROOT="$PWD/$APP.app"
+          mkdir -p "$ROOT/Contents/MacOS"
+          printf '%s' "<?xml version='1.0'?><plist version='1.0'><dict><key>CFBundleExecutable</key><string>App</string><key>CFBundleIdentifier</key><string>com.wostgit.graph.$MODE</string><key>CFBundleName</key><string>$APP</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>" > "$ROOT/Contents/Info.plist"
+          xcrun swiftc app.swift -framework AppKit -O -o "$ROOT/Contents/MacOS/App"
+          codesign --force --deep --sign - "$ROOT"
+          SAMPLES="$PWD/$OUT/app-samples.csv" MODE="$MODE" open -n "$ROOT"
+          sleep 2
+          PID=$(pgrep -n App)
+          echo "second,ps_cpu_percent,ps_rss_mb" > "$OUT/ps-samples.csv"
+          for s in $(seq 1 14); do ps -p "$PID" -o %cpu= -o rss= | awk -v s="$s" '{printf "%d,%.3f,%.3f\n",s,$1,$2/1024}' >> "$OUT/ps-samples.csv" || true; sleep 1; done
+          screencapture -x "$OUT/screenshot.png" || true
+          ditto -c -k --sequesterRsrc --keepParent "$ROOT" "$OUT/$APP.app.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: graph-fidelity-${{ matrix.mode }}
+          path: realtime-graph-fidelity-results/
+
+  aggregate:
+    runs-on: ubuntu-latest
+    needs: fidelity
+    if: always() && github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { token: "${{ secrets.GITHUB_TOKEN }}", fetch-depth: 0 }
+      - uses: actions/download-artifact@v4
+        with: { pattern: graph-fidelity-*, path: downloaded, merge-multiple: true }
+      - name: Rank approaches
+        run: |
+          set -euxo pipefail
+          rm -rf realtime-graph-fidelity-results
+          cp -R downloaded/realtime-graph-fidelity-results realtime-graph-fidelity-results
+          python3 - <<'PY'
+          import csv, json, statistics
+          from pathlib import Path
+          root=Path('realtime-graph-fidelity-results'); rows=[]
+          for d in sorted([p for p in root.iterdir() if p.is_dir()]):
+            app=list(csv.DictReader(open(d/'app-samples.csv'))); ps=list(csv.DictReader(open(d/'ps-samples.csv')))
+            n=min(len(app),len(ps)); cpu_err=[abs(float(app[i]['app_cpu_percent'])-float(ps[i]['ps_cpu_percent'])) for i in range(n)]
+            mem_gap=[abs(float(app[i]['app_memory_mb'])-float(ps[i]['ps_rss_mb'])) for i in range(n)]
+            avg_cpu=float(statistics.mean([float(x['app_cpu_percent']) for x in app]))
+            score=round(statistics.mean(cpu_err)+0.02*avg_cpu+0.005*statistics.mean(mem_gap),3)
+            rows.append({'mode':d.name,'samples':n,'cpu_mae':round(statistics.mean(cpu_err),3),'memory_gap_vs_ps_rss_mb':round(statistics.mean(mem_gap),3),'avg_app_cpu':round(avg_cpu,3),'score':score})
+          rows.sort(key=lambda r:r['score'])
+          (root/'rankings.json').write_text(json.dumps(rows,indent=2))
+          with open(root/'rankings.csv','w',newline='') as f: w=csv.DictWriter(f,fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
+          with open(root/'summary.md','w') as f:
+            f.write('# Realtime Graph Fidelity Rankings\n\nLower score is better. CPU error compares in-app proc_taskinfo sampling against external `ps`; memory gap compares app physical footprint against `ps` RSS, so it is a diagnostic gap rather than exact Activity Monitor parity.\n\n')
+            f.write('| Rank | Mode | Samples | CPU MAE | Memory gap vs ps RSS MB | Avg app CPU | Score |\n|---:|---|---:|---:|---:|---:|---:|\n')
+            for i,r in enumerate(rows,1): f.write(f"| {i} | {r['mode']} | {r['samples']} | {r['cpu_mae']} | {r['memory_gap_vs_ps_rss_mb']} | {r['avg_app_cpu']} | {r['score']} |\n")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add realtime-graph-fidelity-results/
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Add realtime graph fidelity results"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
