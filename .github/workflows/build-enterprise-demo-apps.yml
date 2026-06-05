@@ -1,0 +1,82 @@
+name: Build Downloadable Enterprise Demo Apps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - ".github/workflows/build-enterprise-demo-apps.yml"
+      - "apps/EnterpriseDemoApp.swift"
+      - "scripts/build-and-run-enterprise-demo.sh"
+
+permissions:
+  contents: write
+
+jobs:
+  build-app-zips:
+    name: Build .app zip downloads
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Build and package app bundles
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/build-and-run-enterprise-demo.sh
+          rm -rf dist
+          mkdir -p dist
+
+          for level in 1 2 3 4 5; do
+            ./scripts/build-and-run-enterprise-demo.sh enterprise "$level" build
+            ditto -c -k --sequesterRsrc --keepParent "build/EnterpriseDemoApp-Level${level}.app" "dist/EnterpriseDemoApp-Level${level}.app.zip"
+          done
+
+          shasum -a 256 dist/*.zip > dist/SHA256SUMS.txt
+
+          cat > dist/README.md <<'MD'
+          # Downloadable Enterprise Demo Apps
+
+          These zip files contain unsigned macOS `.app` bundles built by GitHub Actions from `apps/EnterpriseDemoApp.swift`.
+
+          After downloading, unzip and run:
+
+          ```bash
+          unzip EnterpriseDemoApp-Level1.app.zip
+          open EnterpriseDemoApp-Level1.app
+          ```
+
+          macOS may warn that the app is unsigned. To run from Terminal anyway:
+
+          ```bash
+          xattr -dr com.apple.quarantine EnterpriseDemoApp-Level1.app
+          open EnterpriseDemoApp-Level1.app
+          ```
+
+          Levels:
+
+          - Level 1: 10,000 rows, 96 MB allocation
+          - Level 2: 40,000 rows, 256 MB allocation
+          - Level 3: 100,000 rows, 640 MB allocation
+          - Level 4: 150,000 rows, 1 GB allocation
+          - Level 5: 250,000 rows, 1.5 GB allocation
+          MD
+
+      - name: Commit app zip downloads
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/
+          if git diff --cached --quiet; then
+            echo "No app zip changes to commit."
+            exit 0
+          fi
+          git commit -m "Add downloadable enterprise demo app zips"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
