@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-downloadable-apps:
-    name: Build signed downloadable enterprise app level ${{ matrix.level }}
+    name: Build interactive downloadable enterprise app level ${{ matrix.level }}
     runs-on: macos-14
     timeout-minutes: 20
 
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build sealed signed app bundle
+      - name: Build sealed signed interactive app bundle
         run: |
           set -euxo pipefail
           mkdir -p "$RESULT_DIR"
@@ -39,9 +39,66 @@ jobs:
           import AppKit
           import Foundation
 
+          final class MetricsChartView: NSView {
+              var cpu: [Double] = [8, 12, 16, 11, 19, 14, 22, 18]
+              var memory: [Double] = [120, 160, 220, 280, 340, 420, 510, 640]
+
+              override var isFlipped: Bool { true }
+
+              override func draw(_ dirtyRect: NSRect) {
+                  super.draw(dirtyRect)
+                  NSColor.windowBackgroundColor.setFill()
+                  bounds.fill()
+
+                  let titleAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 16), .foregroundColor: NSColor.labelColor]
+                  "Live workload metrics".draw(at: NSPoint(x: 16, y: 12), withAttributes: titleAttrs)
+
+                  let plot = NSRect(x: 48, y: 56, width: bounds.width - 80, height: bounds.height - 100)
+                  NSColor.separatorColor.setStroke()
+                  NSBezierPath(rect: plot).stroke()
+
+                  for i in 0...4 {
+                      let y = plot.minY + CGFloat(i) * plot.height / 4
+                      let line = NSBezierPath()
+                      line.move(to: NSPoint(x: plot.minX, y: y))
+                      line.line(to: NSPoint(x: plot.maxX, y: y))
+                      NSColor.gridColor.setStroke()
+                      line.stroke()
+                  }
+
+                  func path(values: [Double], maxValue: Double) -> NSBezierPath {
+                      let p = NSBezierPath()
+                      for (idx, value) in values.enumerated() {
+                          let x = plot.minX + CGFloat(idx) * plot.width / CGFloat(max(values.count - 1, 1))
+                          let normalized = CGFloat(value / maxValue)
+                          let y = plot.maxY - normalized * plot.height
+                          if idx == 0 { p.move(to: NSPoint(x: x, y: y)) } else { p.line(to: NSPoint(x: x, y: y)) }
+                      }
+                      return p
+                  }
+
+                  NSColor.systemBlue.setStroke()
+                  let cpuPath = path(values: cpu, maxValue: max(cpu.max() ?? 100, 100))
+                  cpuPath.lineWidth = 3
+                  cpuPath.stroke()
+
+                  NSColor.systemRed.setStroke()
+                  let memPath = path(values: memory, maxValue: max(memory.max() ?? 1, 1))
+                  memPath.lineWidth = 3
+                  memPath.stroke()
+
+                  let legendAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor]
+                  "Blue: CPU %    Red: RSS memory MB".draw(at: NSPoint(x: 16, y: bounds.height - 32), withAttributes: legendAttrs)
+              }
+          }
+
           final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate {
               var window: NSWindow!
+              var root = NSView()
+              var content = NSView()
+              var status = NSTextField(labelWithString: "Ready")
               var table = NSTableView()
+              var chart = MetricsChartView()
               var rows: [[String]] = []
               var memory: [Data] = []
               var level = 1
@@ -50,20 +107,59 @@ jobs:
               func applicationDidFinishLaunching(_ notification: Notification) {
                   level = Int(ProcessInfo.processInfo.environment["ENTERPRISE_APP_LEVEL"] ?? "1") ?? 1
                   buildData()
-                  buildUI()
+                  buildWindow()
+                  showDashboard()
                   startActivity()
               }
 
               func buildData() {
                   let rowCount = level == 1 ? 10000 : (level == 2 ? 40000 : 100000)
                   let memoryMB = level == 1 ? 96 : (level == 2 ? 256 : 640)
-                  for i in 0..<memoryMB {
-                      memory.append(Data(repeating: UInt8(i % 251), count: 1024 * 1024))
-                  }
+                  for i in 0..<memoryMB { memory.append(Data(repeating: UInt8(i % 251), count: 1024 * 1024)) }
                   rows = (0..<rowCount).map { i in
                       ["USR-\(i)", "Enterprise User \(i)", i % 4 == 0 ? "Admin" : "Standard", i % 9 == 0 ? "Review" : "Active", "Device-\(i % 17000)"]
                   }
               }
+
+              func buildWindow() {
+                  window = NSWindow(contentRect: NSRect(x: 70, y: 80, width: 1240, height: 800), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+                  window.title = "Interactive Enterprise Admin Console - Level \(level)"
+                  window.minSize = NSSize(width: 1000, height: 650)
+
+                  root = NSView(frame: NSRect(x: 0, y: 0, width: 1240, height: 800))
+                  root.autoresizingMask = [.width, .height]
+
+                  let sidebar = NSBox(frame: NSRect(x: 16, y: 54, width: 220, height: 720))
+                  sidebar.title = "Navigation"
+                  root.addSubview(sidebar)
+
+                  addButton("Dashboard", y: 640, action: #selector(showDashboard), parent: sidebar.contentView!)
+                  addButton("Users table", y: 590, action: #selector(showUsers), parent: sidebar.contentView!)
+                  addButton("Metrics chart", y: 540, action: #selector(showMetrics), parent: sidebar.contentView!)
+                  addButton("Settings", y: 490, action: #selector(showSettings), parent: sidebar.contentView!)
+                  addButton("Refresh data", y: 440, action: #selector(refreshData), parent: sidebar.contentView!)
+                  addButton("Export CSV", y: 390, action: #selector(exportCSV), parent: sidebar.contentView!)
+
+                  status.frame = NSRect(x: 260, y: 18, width: 900, height: 24)
+                  status.font = NSFont.systemFont(ofSize: 13)
+                  root.addSubview(status)
+
+                  content = NSView(frame: NSRect(x: 260, y: 54, width: 940, height: 720))
+                  content.autoresizingMask = [.width, .height]
+                  root.addSubview(content)
+
+                  window.contentView = root
+                  window.makeKeyAndOrderFront(nil)
+              }
+
+              func addButton(_ title: String, y: CGFloat, action: Selector, parent: NSView) {
+                  let button = NSButton(title: title, target: self, action: action)
+                  button.frame = NSRect(x: 18, y: y, width: 170, height: 34)
+                  button.bezelStyle = .rounded
+                  parent.addSubview(button)
+              }
+
+              func clearContent() { content.subviews.forEach { $0.removeFromSuperview() } }
 
               func label(_ text: String, _ frame: NSRect, bold: Bool = false, size: CGFloat = 13) -> NSTextField {
                   let field = NSTextField(labelWithString: text)
@@ -72,75 +168,115 @@ jobs:
                   return field
               }
 
-              func buildUI() {
-                  window = NSWindow(contentRect: NSRect(x: 70, y: 80, width: 1220, height: 780), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-                  window.title = "Downloadable Enterprise Admin Console - Level \(level)"
-                  window.minSize = NSSize(width: 900, height: 600)
-
-                  let root = NSView(frame: NSRect(x: 0, y: 0, width: 1220, height: 780))
-                  let sidebar = NSBox(frame: NSRect(x: 18, y: 18, width: 210, height: 734))
-                  sidebar.title = "Navigation"
-                  let nav = ["Dashboard", "Users", "Devices", "Policies", "Audit", "Reports", "Settings"]
-                  for (i, item) in nav.enumerated() {
-                      sidebar.contentView?.addSubview(label(item, NSRect(x: 18, y: 650 - CGFloat(i * 42), width: 160, height: 24), bold: i == 1))
-                  }
-                  root.addSubview(sidebar)
-
-                  root.addSubview(label("Enterprise Admin Workload App", NSRect(x: 260, y: 720, width: 620, height: 32), bold: true, size: 24))
-                  root.addSubview(label("Rows: \(rows.count)   Memory allocation: \(memory.count) MB   Workload level: \(level)", NSRect(x: 260, y: 690, width: 820, height: 22)))
-
-                  let cards = [("Users", "\(rows.count)"), ("Devices", "17K"), ("Open reviews", "\(rows.count / 9)"), ("Admins", "\(rows.count / 4)")]
+              @objc func showDashboard() {
+                  clearContent()
+                  status.stringValue = "Dashboard selected"
+                  content.addSubview(label("Enterprise Admin Dashboard", NSRect(x: 0, y: 660, width: 600, height: 34), bold: true, size: 26))
+                  content.addSubview(label("This is a real interactive native AppKit app. Use the left buttons to switch views.", NSRect(x: 0, y: 628, width: 760, height: 22)))
+                  let cards = [("Users", "\(rows.count)"), ("Memory", "\(memory.count) MB"), ("Open reviews", "\(rows.count / 9)"), ("Admins", "\(rows.count / 4)")]
                   for (i, card) in cards.enumerated() {
-                      let box = NSBox(frame: NSRect(x: 260 + CGFloat(i) * 225, y: 600, width: 205, height: 76))
+                      let box = NSBox(frame: NSRect(x: CGFloat(i % 2) * 300, y: 470 - CGFloat(i / 2) * 130, width: 260, height: 100))
                       box.title = card.0
-                      box.contentView?.addSubview(label(card.1, NSRect(x: 18, y: 20, width: 160, height: 30), bold: true, size: 24))
-                      root.addSubview(box)
+                      box.contentView?.addSubview(label(card.1, NSRect(x: 20, y: 30, width: 200, height: 34), bold: true, size: 28))
+                      content.addSubview(box)
                   }
+                  let button = NSButton(title: "Open metrics chart", target: self, action: #selector(showMetrics))
+                  button.frame = NSRect(x: 0, y: 250, width: 180, height: 36)
+                  button.bezelStyle = .rounded
+                  content.addSubview(button)
+              }
 
-                  let search = NSSearchField(frame: NSRect(x: 930, y: 718, width: 230, height: 28))
+              @objc func showUsers() {
+                  clearContent()
+                  status.stringValue = "Users table selected: \(rows.count) rows"
+                  content.addSubview(label("Users and access review", NSRect(x: 0, y: 660, width: 500, height: 32), bold: true, size: 24))
+                  let search = NSSearchField(frame: NSRect(x: 660, y: 662, width: 230, height: 28))
                   search.stringValue = "status:active role:admin"
-                  root.addSubview(search)
-
-                  let scroll = NSScrollView(frame: NSRect(x: 260, y: 70, width: 900, height: 510))
-                  let columns = [("id", "User ID", 140), ("name", "Name", 250), ("role", "Role", 140), ("status", "Status", 140), ("device", "Device", 180)]
-                  for c in columns {
+                  content.addSubview(search)
+                  let scroll = NSScrollView(frame: NSRect(x: 0, y: 60, width: 900, height: 580))
+                  table = NSTableView(frame: scroll.bounds)
+                  let cols = [("id", "User ID", 140), ("name", "Name", 250), ("role", "Role", 140), ("status", "Status", 140), ("device", "Device", 180)]
+                  for c in cols {
                       let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(c.0))
-                      col.title = c.1
-                      col.width = CGFloat(c.2)
-                      table.addTableColumn(col)
+                      col.title = c.1; col.width = CGFloat(c.2); table.addTableColumn(col)
                   }
-                  table.delegate = self
-                  table.dataSource = self
-                  table.usesAlternatingRowBackgroundColors = true
-                  scroll.documentView = table
-                  scroll.hasVerticalScroller = true
-                  scroll.hasHorizontalScroller = true
-                  root.addSubview(scroll)
+                  table.delegate = self; table.dataSource = self; table.usesAlternatingRowBackgroundColors = true
+                  scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
+                  content.addSubview(scroll)
+                  table.reloadData()
+              }
 
-                  let progress = NSProgressIndicator(frame: NSRect(x: 260, y: 35, width: 900, height: 18))
-                  progress.isIndeterminate = true
-                  progress.startAnimation(nil)
-                  root.addSubview(progress)
+              @objc func showMetrics() {
+                  clearContent()
+                  status.stringValue = "In-app CPU/RSS visualization selected"
+                  content.addSubview(label("CPU and memory visualization", NSRect(x: 0, y: 660, width: 600, height: 32), bold: true, size: 24))
+                  content.addSubview(label("The chart below is drawn inside the app with AppKit, not just generated as an external SVG.", NSRect(x: 0, y: 630, width: 800, height: 22)))
+                  chart = MetricsChartView(frame: NSRect(x: 0, y: 120, width: 880, height: 480))
+                  let baseMemory = Double(memory.count)
+                  chart.cpu = [8, 11, 18, 15, 24, 19, 29, 22, 34, 26].map { $0 + Double(level * 3) }
+                  chart.memory = [0.30, 0.42, 0.50, 0.58, 0.70, 0.78, 0.86, 0.92, 0.97, 1.0].map { $0 * baseMemory }
+                  content.addSubview(chart)
 
-                  window.contentView = root
-                  window.makeKeyAndOrderFront(nil)
+                  let simulate = NSButton(title: "Simulate workload spike", target: self, action: #selector(simulateSpike))
+                  simulate.frame = NSRect(x: 0, y: 60, width: 190, height: 34)
+                  simulate.bezelStyle = .rounded
+                  content.addSubview(simulate)
+              }
+
+              @objc func showSettings() {
+                  clearContent()
+                  status.stringValue = "Settings selected"
+                  content.addSubview(label("Policy settings", NSRect(x: 0, y: 660, width: 400, height: 32), bold: true, size: 24))
+                  let items = ["Require FileVault", "Enforce screen lock", "Audit admin elevation", "Require managed device", "Block unsigned extensions"]
+                  for (i, item) in items.enumerated() {
+                      let cb = NSButton(checkboxWithTitle: item, target: self, action: #selector(settingChanged(_:)))
+                      cb.frame = NSRect(x: 0, y: 600 - CGFloat(i * 48), width: 360, height: 28)
+                      cb.state = i == 4 ? .off : .on
+                      content.addSubview(cb)
+                  }
+                  let apply = NSButton(title: "Apply policy", target: self, action: #selector(applyPolicy))
+                  apply.frame = NSRect(x: 0, y: 310, width: 140, height: 34)
+                  apply.bezelStyle = .rounded
+                  content.addSubview(apply)
+              }
+
+              @objc func refreshData() {
+                  rows.shuffle()
+                  status.stringValue = "Data refreshed and shuffled at \(Date())"
+                  table.reloadData()
+              }
+
+              @objc func exportCSV() {
+                  let path = NSTemporaryDirectory() + "enterprise-users-level-\(level).csv"
+                  let csv = rows.prefix(1000).map { $0.joined(separator: ",") }.joined(separator: "\n")
+                  try? csv.write(toFile: path, atomically: true, encoding: .utf8)
+                  status.stringValue = "Exported first 1,000 rows to \(path)"
+              }
+
+              @objc func applyPolicy() { status.stringValue = "Policy applied successfully" }
+              @objc func settingChanged(_ sender: NSButton) { status.stringValue = "Changed setting: \(sender.title) = \(sender.state == .on ? "on" : "off")" }
+
+              @objc func simulateSpike() {
+                  chart.cpu.append(Double.random(in: 35...75))
+                  chart.memory.append(Double(memory.count) * Double.random(in: 0.75...1.15))
+                  if chart.cpu.count > 16 { chart.cpu.removeFirst() }
+                  if chart.memory.count > 16 { chart.memory.removeFirst() }
+                  chart.needsDisplay = true
+                  status.stringValue = "Simulated workload spike added to in-app chart"
               }
 
               func startActivity() {
-                  Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+                  Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
                       self.tick += 1
-                      if self.rows.count > 0 {
+                      if self.table.numberOfRows > 0 {
                           let row = (self.tick * 997) % self.rows.count
                           self.table.scrollRowToVisible(row)
                           self.table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                       }
-                      _ = self.rows.prefix(1000 + self.level * 3000).filter { $0[3] == "Active" }.count
-                      self.window.contentView?.needsDisplay = true
                   }
               }
 
               func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
-
               func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
                   let id = tableColumn?.identifier.rawValue ?? "id"
                   let idx = ["id": 0, "name": 1, "role": 2, "status": 3, "device": 4][id] ?? 0
@@ -168,8 +304,8 @@ jobs:
             <key>CFBundleIdentifier</key><string>com.wostgit.macappstester.downloadable.level${LEVEL}</string>
             <key>CFBundleName</key><string>${APP_NAME}</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>1.0</string>
-            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundleShortVersionString</key><string>1.1</string>
+            <key>CFBundleVersion</key><string>2</string>
             <key>LSMinimumSystemVersion</key><string>13.0</string>
             <key>NSPrincipalClass</key><string>NSApplication</string>
           </dict>
@@ -177,19 +313,14 @@ jobs:
           PLIST
 
           cat > "$APP_ROOT/Contents/Resources/README-OPENING.txt" <<README
-          This test app is ad-hoc signed, but it is not notarized with an Apple Developer ID.
-
-          If macOS says the app is damaged or cannot be opened after download, remove the download quarantine attribute:
-
+          This app is ad-hoc signed, but not Apple-notarized.
+          If macOS reports it as damaged after download, run:
             xattr -dr com.apple.quarantine "${APP_NAME}.app"
             open "${APP_NAME}.app"
-
-          This is expected for unsigned/notarization-free test builds downloaded from GitHub.
           README
 
           xcrun swiftc EnterpriseDownloadableApp.swift -framework AppKit -O -o "$APP_ROOT/Contents/MacOS/EnterpriseDownloadableApp"
           chmod +x "$APP_ROOT/Contents/MacOS/EnterpriseDownloadableApp"
-
           codesign --force --deep --sign - "$APP_ROOT"
           codesign --verify --deep --strict --verbose=2 "$APP_ROOT"
 
@@ -241,7 +372,7 @@ jobs:
             "open_script": "$RESULT_DIR/open-after-download.sh",
             "signature": "ad-hoc signed with codesign --sign -",
             "notarized": False,
-            "quarantine_note": "If macOS reports damaged, run xattr -dr com.apple.quarantine on the .app after unzipping."
+            "features": ["clickable navigation buttons", "clickable refresh/export/settings actions", "in-app AppKit CPU/RSS chart", "interactive workload spike button"]
           }
           open("$RESULT_DIR/app.json", "w").write(json.dumps(data, indent=2, sort_keys=True))
           PY
@@ -281,7 +412,6 @@ jobs:
           set -euxo pipefail
           rm -rf macos-enterprise-ui-downloadable-apps
           mkdir -p macos-enterprise-ui-downloadable-apps
-
           if [ -d downloaded-apps/macos-enterprise-ui-downloadable-apps ]; then
             cp -R downloaded-apps/macos-enterprise-ui-downloadable-apps/. macos-enterprise-ui-downloadable-apps/
           else
@@ -297,14 +427,11 @@ jobs:
           with out.open("w") as f:
               f.write("# macOS Enterprise UI Downloadable App Bundles\n\n")
               f.write(f"Total app bundles: {len(rows)}\n\n")
-              f.write("These apps are ad-hoc signed for test use, but they are not Apple-notarized. If macOS reports an app is damaged after download, unzip it and run `xattr -dr com.apple.quarantine EnterpriseDownloadableLevelX.app`, or use the included `open-after-download.sh`.\n\n")
+              f.write("Version 1.1 adds real clickable AppKit buttons and an in-app CPU/RSS visualization chart. These apps are ad-hoc signed but not Apple-notarized. If macOS reports an app is damaged, unzip it and run `xattr -dr com.apple.quarantine EnterpriseDownloadableLevelX.app`.\n\n")
               f.write("| Runner | macOS | Level | Rows | Memory MB | App zip | Size bytes | SHA-256 | Preview | Open script |\n")
               f.write("|---|---|---:|---:|---:|---|---:|---|---|---|\n")
               for r in rows:
-                  f.write(
-                      f"| {r['runner']} | {r['macOS']} | {r['level']} | {r['rows']} | {r['configured_memory_mb']} | "
-                      f"[{r['app_zip']}]({r['app_zip']}) | {r['app_zip_bytes']} | `{r['sha256']}` | [{r['preview']}]({r['preview']}) | [{r['open_script']}]({r['open_script']}) |\n"
-                  )
+                  f.write(f"| {r['runner']} | {r['macOS']} | {r['level']} | {r['rows']} | {r['configured_memory_mb']} | [{r['app_zip']}]({r['app_zip']}) | {r['app_zip_bytes']} | `{r['sha256']}` | [{r['preview']}]({r['preview']}) | [{r['open_script']}]({r['open_script']}) |\n")
           print(out.read_text())
           PY
           cat macos-enterprise-ui-downloadable-apps/summary.md >> "$GITHUB_STEP_SUMMARY"
@@ -319,6 +446,6 @@ jobs:
             echo "No downloadable app changes to commit."
             exit 0
           fi
-          git commit -m "Add sealed ad-hoc signed downloadable macOS app bundles"
+          git commit -m "Add interactive downloadable macOS enterprise app bundles"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
