@@ -1,0 +1,376 @@
+name: macOS Terminal UI App Tester
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_level:
+        description: "Maximum complexity level to run: 1-5"
+        required: true
+        default: "5"
+      runs_per_level:
+        description: "How many times to repeat each level"
+        required: true
+        default: "3"
+
+  push:
+    branches: [main, master]
+    paths:
+      - ".github/workflows/macos-terminal-ui-test.yml"
+      - "**/*.swift"
+      - "**/*.m"
+      - "**/*.mm"
+      - "**/*.h"
+      - "**/*.xcodeproj/**"
+      - "**/*.xcworkspace/**"
+      - "Package.swift"
+
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  macos-terminal-ui-test:
+    name: macOS ${{ matrix.macos }} UI level ${{ matrix.level }}
+    runs-on: ${{ matrix.macos }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        macos:
+          - macos-14
+          - macos-15
+        level: [1, 2, 3, 4, 5]
+
+    env:
+      MAX_LEVEL: ${{ github.event.inputs.max_level || '5' }}
+      RUNS_PER_LEVEL: ${{ github.event.inputs.runs_per_level || '3' }}
+      LEVEL: ${{ matrix.level }}
+      REPORT_ROOT: macos-ui-test-results
+      REPORT_DIR: macos-ui-test-results/${{ matrix.macos }}/level-${{ matrix.level }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip levels above requested max
+        id: gate
+        run: |
+          if [ "$LEVEL" -gt "$MAX_LEVEL" ]; then
+            echo "run_level=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping level $LEVEL because MAX_LEVEL=$MAX_LEVEL"
+          else
+            echo "run_level=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Show macOS terminal environment
+        if: steps.gate.outputs.run_level == 'true'
+        run: |
+          set -euxo pipefail
+          mkdir -p "$REPORT_DIR"
+
+          {
+            echo "# Environment"
+            echo
+            echo "Runner label: ${{ matrix.macos }}"
+            echo "Complexity level: $LEVEL"
+            echo
+            echo "## sw_vers"
+            sw_vers
+            echo
+            echo "## uname"
+            uname -a
+            echo
+            echo "## Xcode"
+            xcodebuild -version || true
+            echo
+            echo "## Swift"
+            xcrun swift --version || true
+            echo
+            echo "## Hardware"
+            system_profiler SPHardwareDataType || true
+          } | tee "$REPORT_DIR/environment.txt"
+
+      - name: Generate terminal-driven UI app tester
+        if: steps.gate.outputs.run_level == 'true'
+        run: |
+          cat > TerminalUITester.swift <<'SWIFT'
+          import Foundation
+          import AppKit
+
+          struct Result: Codable {
+              let runnerLabel: String
+              let macOSVersion: String
+              let level: Int
+              let run: Int
+              let startedAt: String
+              let elapsedSeconds: Double
+              let success: Bool
+              let notes: [String]
+          }
+
+          func isoNow() -> String {
+              ISO8601DateFormatter().string(from: Date())
+          }
+
+          func shell(_ command: String) -> String {
+              let process = Process()
+              process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+              process.arguments = ["-lc", command]
+              let pipe = Pipe()
+              process.standardOutput = pipe
+              process.standardError = pipe
+              do {
+                  try process.run()
+                  process.waitUntilExit()
+              } catch {
+                  return "shell error: \(error)"
+              }
+              return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+          }
+
+          func macOSVersion() -> String {
+              shell("sw_vers -productVersion").trimmingCharacters(in: .whitespacesAndNewlines)
+          }
+
+          func makeAppBundle(at bundleURL: URL, level: Int) throws {
+              let contentsURL = bundleURL.appendingPathComponent("Contents")
+              let macOSURL = contentsURL.appendingPathComponent("MacOS")
+              try FileManager.default.createDirectory(at: macOSURL, withIntermediateDirectories: true)
+
+              let infoPlist = """
+              <?xml version="1.0" encoding="UTF-8"?>
+              <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+              <plist version="1.0">
+              <dict>
+                <key>CFBundleExecutable</key>
+                <string>TerminalUITestApp</string>
+                <key>CFBundleIdentifier</key>
+                <string>com.wostgit.macappstester.terminal-ui.level\(level)</string>
+                <key>CFBundleName</key>
+                <string>Terminal UI Test App Level \(level)</string>
+                <key>CFBundlePackageType</key>
+                <string>APPL</string>
+                <key>CFBundleVersion</key>
+                <string>1</string>
+                <key>CFBundleShortVersionString</key>
+                <string>1.0</string>
+                <key>LSMinimumSystemVersion</key>
+                <string>13.0</string>
+                <key>NSPrincipalClass</key>
+                <string>NSApplication</string>
+              </dict>
+              </plist>
+              """
+
+              try infoPlist.write(to: contentsURL.appendingPathComponent("Info.plist"), atomically: true, encoding: .utf8)
+
+              let source = """
+              import Foundation
+              import AppKit
+
+              final class AppDelegate: NSObject, NSApplicationDelegate {
+                  var windows: [NSWindow] = []
+                  var timers: [Timer] = []
+                  var memory: [Data] = []
+
+                  func applicationDidFinishLaunching(_ notification: Notification) {
+                      let level = Int(ProcessInfo.processInfo.environment["UI_TEST_LEVEL"] ?? "1") ?? 1
+                      let duration = Double(ProcessInfo.processInfo.environment["UI_TEST_DURATION"] ?? "5") ?? 5
+
+                      let windowCount: Int
+                      let viewCount: Int
+                      let timerCount: Int
+                      let memoryMB: Int
+
+                      switch level {
+                      case 1:
+                          windowCount = 1; viewCount = 5; timerCount = 1; memoryMB = 16
+                      case 2:
+                          windowCount = 2; viewCount = 20; timerCount = 2; memoryMB = 64
+                      case 3:
+                          windowCount = 4; viewCount = 60; timerCount = 4; memoryMB = 128
+                      case 4:
+                          windowCount = 8; viewCount = 150; timerCount = 8; memoryMB = 256
+                      default:
+                          windowCount = 12; viewCount = 300; timerCount = 16; memoryMB = 512
+                      }
+
+                      for i in 0..<memoryMB {
+                          memory.append(Data(repeating: UInt8(i % 255), count: 1024 * 1024))
+                      }
+
+                      for w in 0..<windowCount {
+                          let window = NSWindow(contentRect: NSRect(x: 80 + w * 24, y: 120 + w * 24, width: 640, height: 420), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+                          window.title = "Terminal UI Test Level \\(level) Window \\(w)"
+                          let root = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 420))
+
+                          for i in 0..<viewCount {
+                              let label = NSTextField(labelWithString: "L\\(level) W\\(w) View \\(i)")
+                              label.frame = NSRect(x: 20 + (i % 8) * 72, y: 20 + (i / 8) * 22, width: 68, height: 18)
+                              root.addSubview(label)
+                          }
+
+                          window.contentView = root
+                          window.makeKeyAndOrderFront(nil)
+                          windows.append(window)
+                      }
+
+                      for _ in 0..<timerCount {
+                          let timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+                              for window in self.windows {
+                                  let frame = window.frame
+                                  window.setFrame(NSRect(x: frame.origin.x + Double.random(in: -2...2), y: frame.origin.y + Double.random(in: -2...2), width: frame.width, height: frame.height), display: true)
+                              }
+                          }
+                          timers.append(timer)
+                      }
+
+                      DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                          NSApp.terminate(nil)
+                      }
+                  }
+              }
+
+              let app = NSApplication.shared
+              let delegate = AppDelegate()
+              app.delegate = delegate
+              app.setActivationPolicy(.regular)
+              app.run()
+              """
+
+              let sourceURL = URL(fileURLWithPath: "TerminalUITestApp.swift")
+              try source.write(to: sourceURL, atomically: true, encoding: .utf8)
+              let outputPath = macOSURL.appendingPathComponent("TerminalUITestApp").path
+              let compileOutput = shell("xcrun swiftc TerminalUITestApp.swift -framework AppKit -O -o '\(outputPath)'")
+              if !compileOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                  print(compileOutput)
+              }
+          }
+
+          func runTerminalControlledUIApp(appURL: URL, level: Int, duration: Int) throws -> [String] {
+              var notes: [String] = []
+              let bundlePath = appURL.path
+              let bundleID = "com.wostgit.macappstester.terminal-ui.level\(level)"
+              notes.append("Created app bundle: \(bundlePath)")
+              notes.append("Bundle ID: \(bundleID)")
+
+              let launchOutput = shell("""
+              UI_TEST_LEVEL=\(level) UI_TEST_DURATION=\(duration) open -W -n '\(bundlePath)' --stdout /tmp/terminal-ui-level-\(level).stdout --stderr /tmp/terminal-ui-level-\(level).stderr
+              """)
+              notes.append("open -W output: \(launchOutput.trimmingCharacters(in: .whitespacesAndNewlines))")
+
+              let psOutput = shell("ps aux | grep TerminalUITestApp | grep -v grep || true")
+              notes.append("Post-run process check: \(psOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "no process left running" : psOutput)")
+              return notes
+          }
+
+          let args = CommandLine.arguments
+          guard args.count >= 6 else {
+              print("Usage: TerminalUITester <runner-label> <level> <run> <report-json> <report-log>")
+              exit(2)
+          }
+
+          let runnerLabel = args[1]
+          let level = Int(args[2]) ?? 1
+          let run = Int(args[3]) ?? 1
+          let jsonPath = args[4]
+          let logPath = args[5]
+          let start = Date()
+          let startedAt = isoNow()
+          var success = true
+          var notes: [String] = []
+
+          do {
+              let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("terminal-ui-test-\(UUID().uuidString)")
+              try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+              let appURL = tempRoot.appendingPathComponent("TerminalUITestLevel\(level).app")
+              try makeAppBundle(at: appURL, level: level)
+              let duration = [1: 3, 2: 5, 3: 8, 4: 12][level] ?? 18
+              notes.append(contentsOf: try runTerminalControlledUIApp(appURL: appURL, level: level, duration: duration))
+              try FileManager.default.removeItem(at: tempRoot)
+          } catch {
+              success = false
+              notes.append("FAILED: \(error)")
+          }
+
+          let elapsed = Date().timeIntervalSince(start)
+          let result = Result(runnerLabel: runnerLabel, macOSVersion: macOSVersion(), level: level, run: run, startedAt: startedAt, elapsedSeconds: elapsed, success: success, notes: notes)
+          let encoder = JSONEncoder()
+          encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+          try encoder.encode(result).write(to: URL(fileURLWithPath: jsonPath))
+
+          var log = "macOS terminal UI test\nrunner: \(runnerLabel)\nmacOS: \(result.macOSVersion)\nlevel: \(level)\nrun: \(run)\nstartedAt: \(startedAt)\nelapsedSeconds: \(elapsed)\nsuccess: \(success)\n\nnotes:\n"
+          for note in notes {
+              log += "- \(note.replacingOccurrences(of: "\n", with: "\n  "))\n"
+          }
+          try log.write(to: URL(fileURLWithPath: logPath), atomically: true, encoding: .utf8)
+          print(log)
+          exit(success ? 0 : 1)
+          SWIFT
+
+      - name: Compile terminal UI tester
+        if: steps.gate.outputs.run_level == 'true'
+        run: |
+          set -euxo pipefail
+          xcrun swiftc TerminalUITester.swift -framework AppKit -O -o TerminalUITester
+
+      - name: Run UI apps from terminal
+        if: steps.gate.outputs.run_level == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORT_DIR"
+          for run in $(seq 1 "$RUNS_PER_LEVEL"); do
+            echo "Running terminal UI app test: runner=${{ matrix.macos }}, level=$LEVEL, run=$run"
+            /usr/bin/time -l ./TerminalUITester "${{ matrix.macos }}" "$LEVEL" "$run" "$REPORT_DIR/run-${run}.json" "$REPORT_DIR/run-${run}.log" 2>&1 | tee "$REPORT_DIR/run-${run}.terminal.txt"
+          done
+
+      - name: Build summary
+        if: always() && steps.gate.outputs.run_level == 'true'
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("macos-ui-test-results")
+          rows = []
+          for path in sorted(root.glob("**/run-*.json")):
+              with open(path) as f:
+                  d = json.load(f)
+              rows.append({"path": str(path), "runner": d.get("runnerLabel"), "macOS": d.get("macOSVersion"), "level": d.get("level"), "run": d.get("run"), "success": d.get("success"), "elapsed": d.get("elapsedSeconds")})
+          summary_path = root / "summary.md"
+          summary_path.parent.mkdir(parents=True, exist_ok=True)
+          with open(summary_path, "w") as out:
+              out.write("# macOS Terminal UI Test Results\n\n")
+              out.write("| Runner | macOS | Level | Run | Success | Elapsed seconds | JSON |\n")
+              out.write("|---|---|---:|---:|---|---:|---|\n")
+              for r in rows:
+                  out.write(f"| {r['runner']} | {r['macOS']} | {r['level']} | {r['run']} | {r['success']} | {r['elapsed']:.3f} | `{r['path']}` |\n")
+          print(summary_path.read_text())
+          PY
+          cat "$REPORT_ROOT/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test result artifact
+        if: always() && steps.gate.outputs.run_level == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-ui-test-results-${{ matrix.macos }}-level-${{ matrix.level }}
+          path: macos-ui-test-results/
+          if-no-files-found: ignore
+
+      - name: Commit result logs back to repository
+        if: always() && steps.gate.outputs.run_level == 'true' && github.event_name != 'pull_request'
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add macos-ui-test-results/
+          if git diff --cached --quiet; then
+            echo "No result changes to commit."
+            exit 0
+          fi
+          git commit -m "Add macOS terminal UI test logs"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
