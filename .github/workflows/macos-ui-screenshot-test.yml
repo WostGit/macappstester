@@ -1,0 +1,314 @@
+name: macOS Terminal UI Screenshot Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs_per_level:
+        description: "How many times to repeat each level"
+        required: true
+        default: "2"
+  push:
+    branches: [main, master]
+    paths:
+      - ".github/workflows/macos-ui-screenshot-test.yml"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  screenshot-test:
+    name: Screenshot UI test ${{ matrix.macos }} level ${{ matrix.level }}
+    runs-on: ${{ matrix.macos }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        macos: [macos-14, macos-15]
+        level: [1, 3, 5]
+
+    env:
+      RUNS_PER_LEVEL: ${{ github.event.inputs.runs_per_level || '2' }}
+      LEVEL: ${{ matrix.level }}
+      RESULT_DIR: macos-ui-screenshot-results/${{ matrix.macos }}/level-${{ matrix.level }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build terminal-launched screenshot UI app
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RESULT_DIR"
+
+          cat > ScreenshotTestApp.swift <<'SWIFT'
+          import AppKit
+          import Foundation
+
+          final class AppDelegate: NSObject, NSApplicationDelegate {
+              var windows: [NSWindow] = []
+              var memory: [Data] = []
+
+              func applicationDidFinishLaunching(_ notification: Notification) {
+                  let level = Int(ProcessInfo.processInfo.environment["UI_TEST_LEVEL"] ?? "1") ?? 1
+                  let duration = Double(ProcessInfo.processInfo.environment["UI_TEST_DURATION"] ?? "8") ?? 8
+
+                  let windowCount: Int
+                  let viewCount: Int
+                  let memoryMB: Int
+
+                  switch level {
+                  case 1:
+                      windowCount = 1; viewCount = 20; memoryMB = 32
+                  case 3:
+                      windowCount = 4; viewCount = 120; memoryMB = 160
+                  default:
+                      windowCount = 8; viewCount = 320; memoryMB = 512
+                  }
+
+                  for i in 0..<memoryMB {
+                      memory.append(Data(repeating: UInt8(i % 251), count: 1024 * 1024))
+                  }
+
+                  for w in 0..<windowCount {
+                      let window = NSWindow(
+                          contentRect: NSRect(x: 80 + w * 28, y: 110 + w * 28, width: 760, height: 500),
+                          styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                          backing: .buffered,
+                          defer: false
+                      )
+                      window.title = "Native macOS Screenshot Test - Level \(level) - Window \(w)"
+
+                      let root = NSView(frame: NSRect(x: 0, y: 0, width: 760, height: 500))
+
+                      let title = NSTextField(labelWithString: "Native macOS UI screenshot reliability test")
+                      title.frame = NSRect(x: 24, y: 450, width: 600, height: 24)
+                      title.font = NSFont.boldSystemFont(ofSize: 18)
+                      root.addSubview(title)
+
+                      let progress = NSProgressIndicator(frame: NSRect(x: 24, y: 420, width: 500, height: 20))
+                      progress.isIndeterminate = false
+                      progress.minValue = 0
+                      progress.maxValue = 100
+                      progress.doubleValue = Double((w + 1) * 100 / max(windowCount, 1))
+                      root.addSubview(progress)
+
+                      let scroll = NSScrollView(frame: NSRect(x: 24, y: 24, width: 700, height: 380))
+                      let doc = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: max(380, viewCount * 24)))
+
+                      for i in 0..<viewCount {
+                          let field = NSTextField(labelWithString: "Level \(level) Window \(w) Native row \(i) - AppKit NSTextField in NSScrollView")
+                          field.frame = NSRect(x: 8 + (i % 2) * 330, y: i * 24, width: 320, height: 20)
+                          doc.addSubview(field)
+                      }
+
+                      scroll.documentView = doc
+                      scroll.hasVerticalScroller = true
+                      root.addSubview(scroll)
+
+                      window.contentView = root
+                      window.makeKeyAndOrderFront(nil)
+                      windows.append(window)
+                  }
+
+                  Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+                      for window in self.windows {
+                          window.contentView?.needsDisplay = true
+                      }
+                  }
+
+                  DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                      NSApp.terminate(nil)
+                  }
+              }
+          }
+
+          let app = NSApplication.shared
+          let delegate = AppDelegate()
+          app.delegate = delegate
+          app.setActivationPolicy(.regular)
+          app.run()
+          SWIFT
+
+          APP_ROOT="$PWD/ScreenshotTestLevel${LEVEL}.app"
+          mkdir -p "$APP_ROOT/Contents/MacOS"
+          cat > "$APP_ROOT/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>ScreenshotTestApp</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.wostgit.macappstester.screenshot.level${LEVEL}</string>
+            <key>CFBundleName</key>
+            <string>ScreenshotTestLevel${LEVEL}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>NSPrincipalClass</key>
+            <string>NSApplication</string>
+          </dict>
+          </plist>
+          PLIST
+
+          xcrun swiftc ScreenshotTestApp.swift -framework AppKit -O -o "$APP_ROOT/Contents/MacOS/ScreenshotTestApp"
+
+      - name: Run from terminal and capture screenshots
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RESULT_DIR/screenshots"
+
+          {
+            echo "# Environment"
+            sw_vers
+            uname -a
+            xcodebuild -version || true
+          } | tee "$RESULT_DIR/environment.txt"
+
+          for run in $(seq 1 "$RUNS_PER_LEVEL"); do
+            LOG="$RESULT_DIR/run-${run}.log"
+            JSON="$RESULT_DIR/run-${run}.json"
+            SHOT="$RESULT_DIR/screenshots/level-${LEVEL}-run-${run}.png"
+            APP="$PWD/ScreenshotTestLevel${LEVEL}.app"
+
+            START=$(python3 - <<'PY'
+          import time
+          print(time.time())
+          PY
+          )
+
+            UI_TEST_LEVEL="$LEVEL" UI_TEST_DURATION=10 open -n "$APP"
+            sleep 4
+
+            screencapture -x "$SHOT" || true
+            test -s "$SHOT"
+
+            osascript -e 'tell application "ScreenshotTestLevel'"${LEVEL}"'" to quit' || true
+            sleep 2
+            pkill -f ScreenshotTestApp || true
+
+            END=$(python3 - <<'PY'
+          import time
+          print(time.time())
+          PY
+          )
+
+            ELAPSED=$(python3 - <<PY
+          print(round(float("$END") - float("$START"), 3))
+          PY
+          )
+
+            {
+              echo "macOS native terminal screenshot UI test"
+              echo "runner: ${{ matrix.macos }}"
+              echo "level: $LEVEL"
+              echo "run: $run"
+              echo "elapsed_seconds: $ELAPSED"
+              echo "screenshot: $SHOT"
+              echo "screenshot_bytes: $(stat -f%z "$SHOT")"
+              echo "process_check: $(ps aux | grep ScreenshotTestApp | grep -v grep || true)"
+            } | tee "$LOG"
+
+            python3 - <<PY
+          import json, subprocess
+          data = {
+              "runner": "${{ matrix.macos }}",
+              "macOS": subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip(),
+              "level": int("$LEVEL"),
+              "run": int("$run"),
+              "success": True,
+              "elapsed_seconds": float("$ELAPSED"),
+              "screenshot": "$SHOT",
+              "screenshot_bytes": int(subprocess.check_output(["stat", "-f%z", "$SHOT"], text=True).strip())
+          }
+          open("$JSON", "w").write(json.dumps(data, indent=2, sort_keys=True))
+          PY
+          done
+
+      - name: Upload screenshot results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-ui-screenshot-results-${{ matrix.macos }}-level-${{ matrix.level }}
+          path: macos-ui-screenshot-results/
+          if-no-files-found: ignore
+
+  aggregate-screenshot-results:
+    name: Aggregate and commit screenshot results
+    runs-on: ubuntu-latest
+    needs: screenshot-test
+    if: always() && github.event_name != 'pull_request'
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-ui-screenshot-results-*
+          path: downloaded-screenshot-results
+          merge-multiple: true
+
+      - name: Aggregate screenshots and logs
+        run: |
+          set -euxo pipefail
+          rm -rf macos-ui-screenshot-results
+          mkdir -p macos-ui-screenshot-results
+
+          if [ -d downloaded-screenshot-results/macos-ui-screenshot-results ]; then
+            cp -R downloaded-screenshot-results/macos-ui-screenshot-results/. macos-ui-screenshot-results/
+          else
+            cp -R downloaded-screenshot-results/. macos-ui-screenshot-results/ || true
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("macos-ui-screenshot-results")
+          rows = []
+          for path in sorted(root.glob("**/run-*.json")):
+              d = json.loads(path.read_text())
+              rows.append(d)
+
+          out = root / "summary.md"
+          with out.open("w") as f:
+              f.write("# macOS Terminal UI Screenshot Test Results\n\n")
+              f.write(f"Total screenshot runs: {len(rows)}\n\n")
+              f.write("| Runner | macOS | Level | Run | Success | Elapsed seconds | Screenshot bytes | Screenshot |\n")
+              f.write("|---|---|---:|---:|---|---:|---:|---|\n")
+              for r in rows:
+                  f.write(
+                      f"| {r['runner']} | {r['macOS']} | {r['level']} | {r['run']} | "
+                      f"{r['success']} | {r['elapsed_seconds']:.3f} | {r['screenshot_bytes']} | `{r['screenshot']}` |\n"
+                  )
+          print(out.read_text())
+          PY
+
+          cat macos-ui-screenshot-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit screenshot results
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add macos-ui-screenshot-results/
+          if git diff --cached --quiet; then
+            echo "No screenshot result changes to commit."
+            exit 0
+          fi
+          git commit -m "Add macOS terminal UI screenshot results"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
