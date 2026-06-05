@@ -1,0 +1,11 @@
+{
+  "app_zip": "macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.app.zip",
+  "app_zip_bytes": 22562,
+  "configured_memory_mb": 640,
+  "level": 3,
+  "macOS": "14.8.7",
+  "preview": "macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.preview.png",
+  "rows": 100000,
+  "runner": "macos-14",
+  "sha256": "01a5f9980e588e8d7dd69864caf4db96d8592d2ad797c23beccdf47035857513"
+}
