@@ -1,15 +1,15 @@
 {
-  "elapsedSeconds" : 6.432884931564331,
+  "elapsedSeconds" : 6.34414803981781,
   "level" : 2,
   "macOSVersion" : "14.8.7",
   "notes" : [
-    "Created app bundle: \/var\/folders\/y8\/mxm23y3s6m38f6r8d1pbqz600000gn\/T\/terminal-ui-test-2027CED6-F618-43E9-85E8-4C9E2117BE53\/TerminalUITestLevel2.app",
+    "Created app bundle: \/var\/folders\/y8\/mxm23y3s6m38f6r8d1pbqz600000gn\/T\/terminal-ui-test-98A8859D-5FF5-4519-946D-BEE233DA4475\/TerminalUITestLevel2.app",
     "Bundle ID: com.wostgit.macappstester.terminal-ui.level2",
     "open -W output: ",
     "Post-run process check: no process left running"
   ],
   "run" : 3,
   "runnerLabel" : "macos-14",
-  "startedAt" : "2026-06-05T18:25:33Z",
+  "startedAt" : "2026-06-05T19:09:17Z",
   "success" : true
 }

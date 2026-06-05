@@ -9,7 +9,7 @@ ProductVersion:		14.8.7
 BuildVersion:		23J520
 
 ## uname
-Darwin sjc22-be109-1661bc94-9940-49e8-91ae-fc3aebe771bc-9EF1AD32790E.local 23.6.0 Darwin Kernel Version 23.6.0: Tue Apr 21 20:17:41 PDT 2026; root:xnu-10063.141.1.712.16~1/RELEASE_ARM64_VMAPPLE arm64
+Darwin sat12-bq146-8f39f9b5-e76a-42f0-9c57-bd3186c3d451-3ED4F73E5763.local 23.6.0 Darwin Kernel Version 23.6.0: Tue Apr 21 20:17:41 PDT 2026; root:xnu-10063.141.1.712.16~1/RELEASE_ARM64_VMAPPLE arm64
 
 ## Xcode
 Xcode 15.4

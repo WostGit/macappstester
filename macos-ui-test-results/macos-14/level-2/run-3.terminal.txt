@@ -3,29 +3,29 @@ runner: macos-14
 macOS: 14.8.7
 level: 2
 run: 3
-startedAt: 2026-06-05T18:25:33Z
-elapsedSeconds: 6.432884931564331
+startedAt: 2026-06-05T19:09:17Z
+elapsedSeconds: 6.34414803981781
 success: true
 
 notes:
-- Created app bundle: /var/folders/y8/mxm23y3s6m38f6r8d1pbqz600000gn/T/terminal-ui-test-2027CED6-F618-43E9-85E8-4C9E2117BE53/TerminalUITestLevel2.app
+- Created app bundle: /var/folders/y8/mxm23y3s6m38f6r8d1pbqz600000gn/T/terminal-ui-test-98A8859D-5FF5-4519-946D-BEE233DA4475/TerminalUITestLevel2.app
 - Bundle ID: com.wostgit.macappstester.terminal-ui.level2
 - open -W output: 
 - Post-run process check: no process left running
 
-        6.58 real         0.96 user         0.19 sys
-           189513728  maximum resident set size
+        6.49 real         0.85 user         0.17 sys
+           184303616  maximum resident set size
                    0  average shared memory size
                    0  average unshared data size
                    0  average unshared stack size
-               31764  page reclaims
-                 382  page faults
+               31267  page reclaims
+                 652  page faults
                    0  swaps
                    0  block input operations
                    0  block output operations
                    0  messages sent
                    0  messages received
                    4  signals received
-                  30  voluntary context switches
-                1203  involuntary context switches
+                  43  voluntary context switches
+                1152  involuntary context switches
              3343680  peak memory footprint

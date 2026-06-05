@@ -7,9 +7,9 @@ Total result files: 30
 | macos-14 | 14.8.7 | 1 | 1 | True | 4.732 | `macos-ui-test-results/macos-14/level-1/run-1.json` |
 | macos-14 | 14.8.7 | 1 | 2 | True | 4.365 | `macos-ui-test-results/macos-14/level-1/run-2.json` |
 | macos-14 | 14.8.7 | 1 | 3 | True | 4.170 | `macos-ui-test-results/macos-14/level-1/run-3.json` |
-| macos-14 | 14.8.7 | 2 | 1 | True | 6.450 | `macos-ui-test-results/macos-14/level-2/run-1.json` |
-| macos-14 | 14.8.7 | 2 | 2 | True | 6.296 | `macos-ui-test-results/macos-14/level-2/run-2.json` |
-| macos-14 | 14.8.7 | 2 | 3 | True | 6.433 | `macos-ui-test-results/macos-14/level-2/run-3.json` |
+| macos-14 | 14.8.7 | 2 | 1 | True | 6.357 | `macos-ui-test-results/macos-14/level-2/run-1.json` |
+| macos-14 | 14.8.7 | 2 | 2 | True | 6.276 | `macos-ui-test-results/macos-14/level-2/run-2.json` |
+| macos-14 | 14.8.7 | 2 | 3 | True | 6.344 | `macos-ui-test-results/macos-14/level-2/run-3.json` |
 | macos-14 | 14.8.7 | 3 | 1 | True | 9.838 | `macos-ui-test-results/macos-14/level-3/run-1.json` |
 | macos-14 | 14.8.7 | 3 | 2 | True | 9.312 | `macos-ui-test-results/macos-14/level-3/run-2.json` |
 | macos-14 | 14.8.7 | 3 | 3 | True | 9.312 | `macos-ui-test-results/macos-14/level-3/run-3.json` |

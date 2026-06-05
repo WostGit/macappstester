@@ -3,12 +3,12 @@ runner: macos-14
 macOS: 14.8.7
 level: 2
 run: 1
-startedAt: 2026-06-05T18:25:20Z
-elapsedSeconds: 6.449779033660889
+startedAt: 2026-06-05T19:09:04Z
+elapsedSeconds: 6.357481002807617
 success: true
 
 notes:
-- Created app bundle: /var/folders/y8/mxm23y3s6m38f6r8d1pbqz600000gn/T/terminal-ui-test-8AAB3F28-2A64-4758-9A4D-6218C5E35988/TerminalUITestLevel2.app
+- Created app bundle: /var/folders/y8/mxm23y3s6m38f6r8d1pbqz600000gn/T/terminal-ui-test-F4513B87-E284-4B89-A900-196866E03102/TerminalUITestLevel2.app
 - Bundle ID: com.wostgit.macappstester.terminal-ui.level2
 - open -W output: 
 - Post-run process check: no process left running
