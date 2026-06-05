@@ -28,6 +28,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   macos-terminal-ui-test:
@@ -328,31 +329,7 @@ jobs:
             /usr/bin/time -l ./TerminalUITester "${{ matrix.macos }}" "$LEVEL" "$run" "$REPORT_DIR/run-${run}.json" "$REPORT_DIR/run-${run}.log" 2>&1 | tee "$REPORT_DIR/run-${run}.terminal.txt"
           done
 
-      - name: Build summary
-        if: always() && steps.gate.outputs.run_level == 'true'
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          root = Path("macos-ui-test-results")
-          rows = []
-          for path in sorted(root.glob("**/run-*.json")):
-              with open(path) as f:
-                  d = json.load(f)
-              rows.append({"path": str(path), "runner": d.get("runnerLabel"), "macOS": d.get("macOSVersion"), "level": d.get("level"), "run": d.get("run"), "success": d.get("success"), "elapsed": d.get("elapsedSeconds")})
-          summary_path = root / "summary.md"
-          summary_path.parent.mkdir(parents=True, exist_ok=True)
-          with open(summary_path, "w") as out:
-              out.write("# macOS Terminal UI Test Results\n\n")
-              out.write("| Runner | macOS | Level | Run | Success | Elapsed seconds | JSON |\n")
-              out.write("|---|---|---:|---:|---|---:|---|\n")
-              for r in rows:
-                  out.write(f"| {r['runner']} | {r['macOS']} | {r['level']} | {r['run']} | {r['success']} | {r['elapsed']:.3f} | `{r['path']}` |\n")
-          print(summary_path.read_text())
-          PY
-          cat "$REPORT_ROOT/summary.md" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload test result artifact
+      - name: Upload per-job test result artifact
         if: always() && steps.gate.outputs.run_level == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -360,17 +337,95 @@ jobs:
           path: macos-ui-test-results/
           if-no-files-found: ignore
 
-      - name: Commit result logs back to repository
-        if: always() && steps.gate.outputs.run_level == 'true' && github.event_name != 'pull_request'
+  aggregate-and-commit-results:
+    name: Aggregate and commit macOS UI test results
+    runs-on: ubuntu-latest
+    needs: macos-terminal-ui-test
+    if: always() && github.event_name != 'pull_request'
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Download all per-job artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-ui-test-results-*
+          path: downloaded-macos-ui-test-results
+          merge-multiple: true
+
+      - name: Aggregate results
         run: |
           set -euxo pipefail
+
+          rm -rf macos-ui-test-results
+          mkdir -p macos-ui-test-results
+
+          if [ -d downloaded-macos-ui-test-results/macos-ui-test-results ]; then
+            cp -R downloaded-macos-ui-test-results/macos-ui-test-results/. macos-ui-test-results/
+          else
+            cp -R downloaded-macos-ui-test-results/. macos-ui-test-results/ || true
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("macos-ui-test-results")
+          rows = []
+
+          for path in sorted(root.glob("**/run-*.json")):
+              with open(path) as f:
+                  d = json.load(f)
+              rows.append({
+                  "path": str(path),
+                  "runner": d.get("runnerLabel"),
+                  "macOS": d.get("macOSVersion"),
+                  "level": d.get("level"),
+                  "run": d.get("run"),
+                  "success": d.get("success"),
+                  "elapsed": d.get("elapsedSeconds"),
+              })
+
+          summary_path = root / "summary.md"
+          summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+          with open(summary_path, "w") as out:
+              out.write("# macOS Terminal UI Test Results\n\n")
+              out.write(f"Total result files: {len(rows)}\n\n")
+              out.write("| Runner | macOS | Level | Run | Success | Elapsed seconds | JSON |\n")
+              out.write("|---|---|---:|---:|---|---:|---|\n")
+              for r in rows:
+                  out.write(
+                      f"| {r['runner']} | {r['macOS']} | {r['level']} | {r['run']} | "
+                      f"{r['success']} | {r['elapsed']:.3f} | `{r['path']}` |\n"
+                  )
+
+          print(summary_path.read_text())
+          PY
+
+          cat macos-ui-test-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit aggregated result logs back to repository
+        run: |
+          set -euxo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add macos-ui-test-results/
+
           if git diff --cached --quiet; then
             echo "No result changes to commit."
             exit 0
           fi
-          git commit -m "Add macOS terminal UI test logs"
+
+          git commit -m "Add aggregated macOS terminal UI test logs"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
