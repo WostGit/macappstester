@@ -115,7 +115,12 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf macos-enterprise-ui-downloadable-apps
-          cp -R downloaded/macos-enterprise-ui-downloadable-apps macos-enterprise-ui-downloadable-apps
+          mkdir -p macos-enterprise-ui-downloadable-apps
+          if [ -d downloaded/macos-enterprise-ui-downloadable-apps ]; then
+            cp -R downloaded/macos-enterprise-ui-downloadable-apps/. macos-enterprise-ui-downloadable-apps/
+          else
+            cp -R downloaded/. macos-enterprise-ui-downloadable-apps/
+          fi
           python3 - <<'PY'
           import json
           from pathlib import Path
