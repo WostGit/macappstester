@@ -1,0 +1,15 @@
+{
+  "app_zip": "macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.app.zip",
+  "app_zip_bytes": 24404,
+  "configured_memory_mb": 640,
+  "level": 3,
+  "macOS": "14.8.7",
+  "notarized": false,
+  "open_script": "macos-enterprise-ui-downloadable-apps/macos-14/level-3/open-after-download.sh",
+  "preview": "macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.preview.png",
+  "quarantine_note": "If macOS reports damaged, run xattr -dr com.apple.quarantine on the .app after unzipping.",
+  "rows": 100000,
+  "runner": "macos-14",
+  "sha256": "a7d3a411defe83cd7e19ea4462944e7d2e3cfbf1f0fb39f5a8f96dd27b725fbe",
+  "signature": "ad-hoc signed with codesign --sign -"
+}

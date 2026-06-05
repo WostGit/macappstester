@@ -1,8 +1,11 @@
 # macOS Enterprise UI Downloadable App Bundles
 
-Total app bundles: 0
+Total app bundles: 3
 
 These apps are ad-hoc signed for test use, but they are not Apple-notarized. If macOS reports an app is damaged after download, unzip it and run `xattr -dr com.apple.quarantine EnterpriseDownloadableLevelX.app`, or use the included `open-after-download.sh`.
 
 | Runner | macOS | Level | Rows | Memory MB | App zip | Size bytes | SHA-256 | Preview | Open script |
 |---|---|---:|---:|---:|---|---:|---|---|---|
+| macos-14 | 14.8.7 | 1 | 10000 | 96 | [macos-enterprise-ui-downloadable-apps/macos-14/level-1/EnterpriseDownloadableLevel1.app.zip](macos-enterprise-ui-downloadable-apps/macos-14/level-1/EnterpriseDownloadableLevel1.app.zip) | 24401 | `cd14aa84a90143e842abadc8bb809f180c71a2e865a84a22868fe0f9cc4341e4` | [macos-enterprise-ui-downloadable-apps/macos-14/level-1/EnterpriseDownloadableLevel1.preview.png](macos-enterprise-ui-downloadable-apps/macos-14/level-1/EnterpriseDownloadableLevel1.preview.png) | [macos-enterprise-ui-downloadable-apps/macos-14/level-1/open-after-download.sh](macos-enterprise-ui-downloadable-apps/macos-14/level-1/open-after-download.sh) |
+| macos-14 | 14.8.7 | 2 | 40000 | 256 | [macos-enterprise-ui-downloadable-apps/macos-14/level-2/EnterpriseDownloadableLevel2.app.zip](macos-enterprise-ui-downloadable-apps/macos-14/level-2/EnterpriseDownloadableLevel2.app.zip) | 24404 | `07c43a5bbab0f5f88aa1a2701c80c909a4683c324769b36cd7db99ef204d322b` | [macos-enterprise-ui-downloadable-apps/macos-14/level-2/EnterpriseDownloadableLevel2.preview.png](macos-enterprise-ui-downloadable-apps/macos-14/level-2/EnterpriseDownloadableLevel2.preview.png) | [macos-enterprise-ui-downloadable-apps/macos-14/level-2/open-after-download.sh](macos-enterprise-ui-downloadable-apps/macos-14/level-2/open-after-download.sh) |
+| macos-14 | 14.8.7 | 3 | 100000 | 640 | [macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.app.zip](macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.app.zip) | 24404 | `a7d3a411defe83cd7e19ea4462944e7d2e3cfbf1f0fb39f5a8f96dd27b725fbe` | [macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.preview.png](macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.preview.png) | [macos-enterprise-ui-downloadable-apps/macos-14/level-3/open-after-download.sh](macos-enterprise-ui-downloadable-apps/macos-14/level-3/open-after-download.sh) |

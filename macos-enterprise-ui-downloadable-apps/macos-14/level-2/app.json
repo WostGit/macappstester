@@ -1,0 +1,15 @@
+{
+  "app_zip": "macos-enterprise-ui-downloadable-apps/macos-14/level-2/EnterpriseDownloadableLevel2.app.zip",
+  "app_zip_bytes": 24404,
+  "configured_memory_mb": 256,
+  "level": 2,
+  "macOS": "14.8.7",
+  "notarized": false,
+  "open_script": "macos-enterprise-ui-downloadable-apps/macos-14/level-2/open-after-download.sh",
+  "preview": "macos-enterprise-ui-downloadable-apps/macos-14/level-2/EnterpriseDownloadableLevel2.preview.png",
+  "quarantine_note": "If macOS reports damaged, run xattr -dr com.apple.quarantine on the .app after unzipping.",
+  "rows": 40000,
+  "runner": "macos-14",
+  "sha256": "07c43a5bbab0f5f88aa1a2701c80c909a4683c324769b36cd7db99ef204d322b",
+  "signature": "ad-hoc signed with codesign --sign -"
+}
