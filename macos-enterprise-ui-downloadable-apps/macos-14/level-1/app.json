@@ -1,0 +1,9 @@
+{
+  "level": 1,
+  "app_zip": "macos-enterprise-ui-downloadable-apps/macos-14/level-1/EnterpriseDownloadableLevel1.app.zip",
+  "app_zip_bytes": 24504,
+  "sha256": "3aa135816764a6f3af293ac781040241250f7a7439486611e939554b89e15883",
+  "preview": "macos-enterprise-ui-downloadable-apps/macos-14/level-1/EnterpriseDownloadableLevel1.preview.png",
+  "version": "1.4.1",
+  "memory_source": "task_vm_info.phys_footprint"
+}
