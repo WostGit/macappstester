@@ -1,13 +1,13 @@
 {
   "app_zip": "macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.app.zip",
-  "app_zip_bytes": 41249,
+  "app_zip_bytes": 40476,
   "configured_memory_mb": 640,
   "features": [
-    "real-time CPU from getrusage",
-    "real RSS memory from Mach task_info",
-    "start/stop real background CPU workload",
-    "allocate/free real memory workload",
-    "in-app live chart"
+    "Activity Monitor-style live numbers",
+    "proc_pidinfo PROC_PIDTASKINFO CPU and memory",
+    "visible numeric CPU and memory labels",
+    "live in-app graph",
+    "real CPU and memory workload controls"
   ],
   "level": 3,
   "macOS": "14.8.7",
@@ -16,6 +16,6 @@
   "preview": "macos-enterprise-ui-downloadable-apps/macos-14/level-3/EnterpriseDownloadableLevel3.preview.png",
   "rows": 100000,
   "runner": "macos-14",
-  "sha256": "3d5b0e56d80d9ff22dad4bc69a3aaddc403cfc5327c1bfb912cfb87222539579",
+  "sha256": "362d2d1312f66411bce0c55fbdd8e064394d375bcde0f3336f0db2d1db03b3ec",
   "signature": "ad-hoc signed with codesign --sign -"
 }
