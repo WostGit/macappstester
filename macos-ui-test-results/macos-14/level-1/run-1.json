@@ -1,0 +1,15 @@
+{
+  "elapsedSeconds" : 4.731987953186035,
+  "level" : 1,
+  "macOSVersion" : "14.8.7",
+  "notes" : [
+    "Created app bundle: \/var\/folders\/y8\/mxm23y3s6m38f6r8d1pbqz600000gn\/T\/terminal-ui-test-897FECA1-9B25-48EB-83E2-6ECA44B36E5C\/TerminalUITestLevel1.app",
+    "Bundle ID: com.wostgit.macappstester.terminal-ui.level1",
+    "open -W output: ",
+    "Post-run process check: no process left running"
+  ],
+  "run" : 1,
+  "runnerLabel" : "macos-14",
+  "startedAt" : "2026-06-05T18:25:06Z",
+  "success" : true
+}

@@ -1,0 +1,14 @@
+macOS terminal UI test
+runner: macos-14
+macOS: 14.8.7
+level: 3
+run: 3
+startedAt: 2026-06-05T18:25:26Z
+elapsedSeconds: 9.312381982803345
+success: true
+
+notes:
+- Created app bundle: /var/folders/y8/mxm23y3s6m38f6r8d1pbqz600000gn/T/terminal-ui-test-B4675770-F531-4C8F-B3A9-31CD31DD2104/TerminalUITestLevel3.app
+- Bundle ID: com.wostgit.macappstester.terminal-ui.level3
+- open -W output: 
+- Post-run process check: no process left running

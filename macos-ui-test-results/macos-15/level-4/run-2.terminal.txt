@@ -1,0 +1,31 @@
+macOS terminal UI test
+runner: macos-15
+macOS: 15.7.7
+level: 4
+run: 2
+startedAt: 2026-06-05T18:25:57Z
+elapsedSeconds: 15.597452998161316
+success: true
+
+notes:
+- Created app bundle: /var/folders/8d/778wjbv96mq1760tv6gk374m0000gn/T/terminal-ui-test-5EF15BA9-40B3-4A88-9C04-BEA1DAF2BA99/TerminalUITestLevel4.app
+- Bundle ID: com.wostgit.macappstester.terminal-ui.level4
+- open -W output: 
+- Post-run process check: no process left running
+
+       15.75 real         1.83 user         0.68 sys
+           183173120  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               31307  page reclaims
+                2722  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   4  signals received
+                 119  voluntary context switches
+                2832  involuntary context switches
+             3294208  peak memory footprint

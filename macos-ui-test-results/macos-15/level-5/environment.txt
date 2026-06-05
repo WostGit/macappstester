@@ -1,0 +1,39 @@
+# Environment
+
+Runner label: macos-15
+Complexity level: 5
+
+## sw_vers
+ProductName:		macOS
+ProductVersion:		15.7.7
+BuildVersion:		24G720
+
+## uname
+Darwin sat12-bq164-a96b3e0b-92d4-4212-a4bb-f38cd81e4583-BE7B4B42627B.local 24.6.0 Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:00 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_VMAPPLE arm64
+
+## Xcode
+Xcode 16.4
+Build version 16F6
+
+## Swift
+Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2 clang-1700.0.13.5)
+Target: arm64-apple-macosx15.0
+
+## Hardware
+Hardware:
+
+    Hardware Overview:
+
+      Model Name: Apple Virtual Machine 1
+      Model Identifier: VirtualMac2,1
+      Model Number: VM0001LL/A
+      Chip: Apple M1 (Virtual)
+      Total Number of Cores: 3
+      Memory: 7 GB
+      System Firmware Version: mBoot-18000.120.36
+      OS Loader Version: 11881.140.96.701.1
+      Serial Number (system): ZM2LLLH547
+      Hardware UUID: 41EBCDA3-B5A0-5EC4-ADE5-F4646A4B8997
+      Provisioning UDID: 566a8faa6f41f9922394b698328b5d5865f7d386
+      Activation Lock Status: Disabled
+
