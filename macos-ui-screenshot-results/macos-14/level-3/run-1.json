@@ -1,0 +1,10 @@
+{
+  "elapsed_seconds": 6.832,
+  "level": 3,
+  "macOS": "14.8.7",
+  "run": 1,
+  "runner": "macos-14",
+  "screenshot": "macos-ui-screenshot-results/macos-14/level-3/screenshots/level-3-run-1.png",
+  "screenshot_bytes": 305903,
+  "success": true
+}

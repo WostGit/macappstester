@@ -1,0 +1,8 @@
+macOS native terminal screenshot UI test
+runner: macos-14
+level: 1
+run: 1
+elapsed_seconds: 6.671
+screenshot: macos-ui-screenshot-results/macos-14/level-1/screenshots/level-1-run-1.png
+screenshot_bytes: 244967
+process_check: 
