@@ -13,25 +13,24 @@ permissions:
 
 jobs:
   build-downloadable-apps:
-    name: Build signed downloadable enterprise app ${{ matrix.macos }} level ${{ matrix.level }}
-    runs-on: ${{ matrix.macos }}
+    name: Build signed downloadable enterprise app level ${{ matrix.level }}
+    runs-on: macos-14
     timeout-minutes: 20
 
     strategy:
       fail-fast: false
       matrix:
-        macos: [macos-14]
         level: [1, 2, 3]
 
     env:
       LEVEL: ${{ matrix.level }}
-      RESULT_DIR: macos-enterprise-ui-downloadable-apps/${{ matrix.macos }}/level-${{ matrix.level }}
+      RESULT_DIR: macos-enterprise-ui-downloadable-apps/macos-14/level-${{ matrix.level }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build, ad-hoc sign, zip, and test app bundle
+      - name: Build sealed signed app bundle
         run: |
           set -euxo pipefail
           mkdir -p "$RESULT_DIR"
@@ -79,7 +78,6 @@ jobs:
                   window.minSize = NSSize(width: 900, height: 600)
 
                   let root = NSView(frame: NSRect(x: 0, y: 0, width: 1220, height: 780))
-
                   let sidebar = NSBox(frame: NSRect(x: 18, y: 18, width: 210, height: 734))
                   sidebar.title = "Navigation"
                   let nav = ["Dashboard", "Users", "Devices", "Policies", "Audit", "Reports", "Settings"]
@@ -159,8 +157,7 @@ jobs:
 
           APP_NAME="EnterpriseDownloadableLevel${LEVEL}"
           APP_ROOT="$PWD/${APP_NAME}.app"
-          mkdir -p "$APP_ROOT/Contents/MacOS"
-          mkdir -p "$APP_ROOT/Contents/Resources"
+          mkdir -p "$APP_ROOT/Contents/MacOS" "$APP_ROOT/Contents/Resources"
 
           cat > "$APP_ROOT/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -179,7 +176,7 @@ jobs:
           </plist>
           PLIST
 
-          cat > "$APP_ROOT/README-OPENING.txt" <<README
+          cat > "$APP_ROOT/Contents/Resources/README-OPENING.txt" <<README
           This test app is ad-hoc signed, but it is not notarized with an Apple Developer ID.
 
           If macOS says the app is damaged or cannot be opened after download, remove the download quarantine attribute:
@@ -193,11 +190,9 @@ jobs:
           xcrun swiftc EnterpriseDownloadableApp.swift -framework AppKit -O -o "$APP_ROOT/Contents/MacOS/EnterpriseDownloadableApp"
           chmod +x "$APP_ROOT/Contents/MacOS/EnterpriseDownloadableApp"
 
-          # Ad-hoc sign the bundle so Gatekeeper sees a coherent code signature.
           codesign --force --deep --sign - "$APP_ROOT"
           codesign --verify --deep --strict --verbose=2 "$APP_ROOT"
 
-          # Verify the app can launch on the runner before zipping.
           ENTERPRISE_APP_LEVEL="$LEVEL" open -n "$APP_ROOT"
           sleep 4
           screencapture -x "$RESULT_DIR/${APP_NAME}.preview.png" || true
@@ -205,7 +200,6 @@ jobs:
           sleep 1
           pkill -f EnterpriseDownloadableApp || true
 
-          # Preserve the .app bundle structure and resource forks.
           ditto -c -k --sequesterRsrc --keepParent "$APP_ROOT" "$RESULT_DIR/${APP_NAME}.app.zip"
           shasum -a 256 "$RESULT_DIR/${APP_NAME}.app.zip" > "$RESULT_DIR/${APP_NAME}.app.zip.sha256"
 
@@ -235,7 +229,7 @@ jobs:
           python3 - <<PY
           import json
           data = {
-            "runner": "${{ matrix.macos }}",
+            "runner": "macos-14",
             "macOS": "$MACOS",
             "level": int("$LEVEL"),
             "rows": int("$ROWS"),
@@ -255,7 +249,7 @@ jobs:
       - name: Upload downloadable app artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-enterprise-ui-downloadable-apps-${{ matrix.macos }}-level-${{ matrix.level }}
+          name: macos-enterprise-ui-downloadable-apps-macos-14-level-${{ matrix.level }}
           path: macos-enterprise-ui-downloadable-apps/
           if-no-files-found: error
 
@@ -325,6 +319,6 @@ jobs:
             echo "No downloadable app changes to commit."
             exit 0
           fi
-          git commit -m "Add ad-hoc signed downloadable macOS app bundles"
+          git commit -m "Add sealed ad-hoc signed downloadable macOS app bundles"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
