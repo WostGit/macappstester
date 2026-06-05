@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420">
+  <rect width="100%" height="100%" fill="white"/>
+  <text x="70" y="30" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" font-weight="700">Enterprise UI CPU and memory - level 1</text>
+  <text x="70" y="50" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="12" fill="#555">Rows: 10000 | avg CPU: 13.45% | max RSS: 176.453 MB</text>
+  <line x1="70" y1="55.0" x2="880" y2="55.0" stroke="#ddd"/><line x1="70" y1="116.0" x2="880" y2="116.0" stroke="#ddd"/><line x1="70" y1="177.0" x2="880" y2="177.0" stroke="#ddd"/><line x1="70" y1="238.0" x2="880" y2="238.0" stroke="#ddd"/><line x1="70" y1="299.0" x2="880" y2="299.0" stroke="#ddd"/><line x1="70" y1="360.0" x2="880" y2="360.0" stroke="#ddd"/>
+  <line x1="70" y1="55" x2="70" y2="360" stroke="#333"/>
+  <line x1="70" y1="360" x2="880" y2="360" stroke="#333"/>
+  <polyline points="70.0,316.4 132.3,316.4 194.6,311.5 256.9,306.3 319.2,319.7 381.5,341.7 443.8,322.8 506.2,305.1 568.5,308.1 630.8,338.6 693.1,328.9 755.4,314.2 817.7,308.1 880.0,327.7" fill="none" stroke="#2563eb" stroke-width="3"/>
+  <polyline points="70.0,94.2 132.3,93.2 194.6,92.7 256.9,92.4 319.2,91.9 381.5,91.3 443.8,90.9 506.2,95.3 568.5,94.6 630.8,94.1 693.1,93.7 755.4,93.2 817.7,92.8 880.0,92.5" fill="none" stroke="#dc2626" stroke-width="3"/>
+  <text x="70" y="400" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="12">Seconds</text>
+  <text x="670" y="400" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="12" fill="#2563eb">CPU %</text>
+  <text x="735" y="400" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="12" fill="#dc2626">RSS MB</text>
+  <text x="10" y="67" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11" fill="#2563eb">100%</text>
+  <text x="10" y="360" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11" fill="#2563eb">0%</text>
+  <text x="888" y="67" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11" fill="#dc2626">200 MB</text>
+  <text x="888" y="360" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11" fill="#dc2626">0 MB</text>
+</svg>

@@ -1,0 +1,7 @@
+# Environment
+ProductName:		macOS
+ProductVersion:		14.8.7
+BuildVersion:		23J520
+Darwin sjc22-bt152-bb43e257-a702-4cbb-ad81-a34bc0fef558-F2864DBF31AF.local 23.6.0 Darwin Kernel Version 23.6.0: Tue Apr 21 20:17:41 PDT 2026; root:xnu-10063.141.1.712.16~1/RELEASE_ARM64_VMAPPLE arm64
+Xcode 15.4
+Build version 15F31d

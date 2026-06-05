@@ -1,0 +1,16 @@
+{
+  "configured_memory_mb": 256,
+  "cpu_avg_percent": 7.829,
+  "cpu_max_percent": 14.5,
+  "csv": "macos-enterprise-ui-metrics-results/macos-14/level-2/metrics.csv",
+  "level": 2,
+  "macOS": "14.8.7",
+  "rows": 40000,
+  "rss_avg_mb": 380.686,
+  "rss_max_mb": 382.094,
+  "runner": "macos-14",
+  "samples": 14,
+  "screenshot": "macos-enterprise-ui-metrics-results/macos-14/level-2/screenshot.png",
+  "success": true,
+  "svg": "macos-enterprise-ui-metrics-results/macos-14/level-2/cpu-memory.svg"
+}
