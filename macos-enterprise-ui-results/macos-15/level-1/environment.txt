@@ -1,0 +1,7 @@
+# Environment
+ProductName:		macOS
+ProductVersion:		15.7.7
+BuildVersion:		24G720
+Darwin iad20-fj918-5c11a2e8-526f-48be-a103-41194331a810-FAE159D97463.local 24.6.0 Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:00 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_VMAPPLE arm64
+Xcode 16.4
+Build version 16F6

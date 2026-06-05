@@ -1,0 +1,12 @@
+{
+  "elapsed_seconds": 16.567,
+  "level": 1,
+  "macOS": "14.8.7",
+  "rows": 5000,
+  "run": 1,
+  "runner": "macos-14",
+  "screenshot_bytes_total": 1500190,
+  "screenshot_dir": "macos-enterprise-ui-results/macos-14/level-1/screenshots/run-1",
+  "screenshots": 5,
+  "success": true
+}

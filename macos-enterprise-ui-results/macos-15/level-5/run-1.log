@@ -1,0 +1,13 @@
+macOS enterprise native UI test
+runner: macos-15
+level: 5
+run: 1
+rows: 100000
+screenshots: 5
+screenshot_bytes_total: 1162255
+elapsed_seconds: 17.729
+macos-enterprise-ui-results/macos-15/level-5/screenshots/run-1/01-login.png
+macos-enterprise-ui-results/macos-15/level-5/screenshots/run-1/02-dashboard.png
+macos-enterprise-ui-results/macos-15/level-5/screenshots/run-1/03-users-table.png
+macos-enterprise-ui-results/macos-15/level-5/screenshots/run-1/04-settings-sheet.png
+macos-enterprise-ui-results/macos-15/level-5/screenshots/run-1/05-audit-log.png
