@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-downloadable-apps:
-    name: Build Activity Monitor style app level ${{ matrix.level }}
+    name: Build Activity Monitor matching app level ${{ matrix.level }}
     runs-on: macos-14
     timeout-minutes: 20
 
@@ -40,34 +40,69 @@ jobs:
           import Foundation
           import Darwin
 
-          struct ProcessMetrics {
+          struct ActivityMetrics {
               let cpuTimeNs: UInt64
-              let residentMB: Double
+              let activityMemoryMB: Double
+              let rssMB: Double
               let virtualMB: Double
               let threads: Int32
               let runningThreads: Int32
           }
 
-          func readProcessMetrics() -> ProcessMetrics {
-              var info = proc_taskinfo()
-              let bytes = proc_pidinfo(getpid(), Int32(PROC_PIDTASKINFO), 0, &info, Int32(MemoryLayout<proc_taskinfo>.stride))
-              if bytes <= 0 {
-                  return ProcessMetrics(cpuTimeNs: 0, residentMB: -1, virtualMB: -1, threads: 0, runningThreads: 0)
+          func readActivityMetrics() -> ActivityMetrics {
+              var task = proc_taskinfo()
+              let taskBytes = proc_pidinfo(getpid(), Int32(PROC_PIDTASKINFO), 0, &task, Int32(MemoryLayout<proc_taskinfo>.stride))
+
+              var usage = rusage_info_v4()
+              let usageResult = proc_pid_rusage(getpid(), RUSAGE_INFO_V4, &usage)
+
+              let cpuTime: UInt64
+              let rss: Double
+              let virt: Double
+              let threadCount: Int32
+              let runningCount: Int32
+
+              if taskBytes > 0 {
+                  cpuTime = UInt64(task.pti_total_user) + UInt64(task.pti_total_system)
+                  rss = Double(task.pti_resident_size) / 1024.0 / 1024.0
+                  virt = Double(task.pti_virtual_size) / 1024.0 / 1024.0
+                  threadCount = task.pti_threadnum
+                  runningCount = task.pti_numrunning
+              } else {
+                  cpuTime = 0
+                  rss = -1
+                  virt = -1
+                  threadCount = 0
+                  runningCount = 0
               }
-              let cpuTime = UInt64(info.pti_total_user) + UInt64(info.pti_total_system)
-              let rss = Double(info.pti_resident_size) / 1024.0 / 1024.0
-              let virt = Double(info.pti_virtual_size) / 1024.0 / 1024.0
-              return ProcessMetrics(cpuTimeNs: cpuTime, residentMB: rss, virtualMB: virt, threads: info.pti_threadnum, runningThreads: info.pti_numrunning)
+
+              let footprint: Double
+              if usageResult == 0 {
+                  footprint = Double(usage.ri_phys_footprint) / 1024.0 / 1024.0
+              } else {
+                  footprint = rss
+              }
+
+              return ActivityMetrics(
+                  cpuTimeNs: cpuTime,
+                  activityMemoryMB: footprint,
+                  rssMB: rss,
+                  virtualMB: virt,
+                  threads: threadCount,
+                  runningThreads: runningCount
+              )
           }
 
           final class LiveChartView: NSView {
               var cpuSamples: [Double] = []
-              var rssSamples: [Double] = []
+              var memorySamples: [Double] = []
               var latestCPU: Double = 0
+              var latestActivityMemory: Double = 0
               var latestRSS: Double = 0
               var latestVirtual: Double = 0
               var latestThreads: Int32 = 0
               var latestRunning: Int32 = 0
+              var pid: Int32 = getpid()
 
               override var isFlipped: Bool { true }
 
@@ -77,18 +112,20 @@ jobs:
                   bounds.fill()
 
                   let titleAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 18), .foregroundColor: NSColor.labelColor]
-                  "Live Activity Monitor-style process metrics".draw(at: NSPoint(x: 18, y: 14), withAttributes: titleAttrs)
+                  "Activity Monitor matching metrics".draw(at: NSPoint(x: 18, y: 14), withAttributes: titleAttrs)
 
-                  let smallAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]
-                  "Source: proc_pidinfo(PROC_PIDTASKINFO) for this PID. CPU = delta(pti_total_user + pti_total_system) / delta(wall time).".draw(at: NSPoint(x: 18, y: 42), withAttributes: smallAttrs)
+                  let noteAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]
+                  "Search Activity Monitor for PID \(pid) or EnterpriseDownloadableApp. Memory uses physical footprint, not RSS.".draw(at: NSPoint(x: 18, y: 42), withAttributes: noteAttrs)
 
                   let valueAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 18, weight: .semibold), .foregroundColor: NSColor.labelColor]
-                  String(format: "%% CPU: %.1f", latestCPU).draw(at: NSPoint(x: 18, y: 74), withAttributes: valueAttrs)
-                  String(format: "Memory: %.1f MB", latestRSS).draw(at: NSPoint(x: 180, y: 74), withAttributes: valueAttrs)
-                  String(format: "Virtual: %.1f MB", latestVirtual).draw(at: NSPoint(x: 390, y: 74), withAttributes: valueAttrs)
-                  "Threads: \(latestThreads) / running \(latestRunning)".draw(at: NSPoint(x: 620, y: 74), withAttributes: valueAttrs)
+                  String(format: "%% CPU: %.1f", latestCPU).draw(at: NSPoint(x: 18, y: 76), withAttributes: valueAttrs)
+                  String(format: "Activity Monitor Memory: %.1f MB", latestActivityMemory).draw(at: NSPoint(x: 170, y: 76), withAttributes: valueAttrs)
+                  String(format: "RSS: %.1f MB", latestRSS).draw(at: NSPoint(x: 560, y: 76), withAttributes: valueAttrs)
 
-                  let plot = NSRect(x: 58, y: 125, width: bounds.width - 105, height: bounds.height - 185)
+                  String(format: "Virtual: %.1f MB", latestVirtual).draw(at: NSPoint(x: 18, y: 108), withAttributes: valueAttrs)
+                  "Threads: \(latestThreads)   Running: \(latestRunning)".draw(at: NSPoint(x: 280, y: 108), withAttributes: valueAttrs)
+
+                  let plot = NSRect(x: 58, y: 155, width: bounds.width - 105, height: bounds.height - 225)
                   NSColor.separatorColor.setStroke()
                   NSBezierPath(rect: plot).stroke()
 
@@ -114,7 +151,7 @@ jobs:
                   }
 
                   let cpuAxis = max(100.0, ceil((cpuSamples.max() ?? 0) / 100.0) * 100.0)
-                  let rssAxis = max(256.0, ceil((rssSamples.max() ?? 0) / 256.0) * 256.0)
+                  let memoryAxis = max(256.0, ceil((memorySamples.max() ?? 0) / 256.0) * 256.0)
 
                   NSColor.systemBlue.setStroke()
                   let cpuPath = makePath(values: cpuSamples, maxValue: cpuAxis)
@@ -122,14 +159,14 @@ jobs:
                   cpuPath.stroke()
 
                   NSColor.systemRed.setStroke()
-                  let rssPath = makePath(values: rssSamples, maxValue: rssAxis)
-                  rssPath.lineWidth = 3
-                  rssPath.stroke()
+                  let memPath = makePath(values: memorySamples, maxValue: memoryAxis)
+                  memPath.lineWidth = 3
+                  memPath.stroke()
 
                   let legendAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.labelColor]
                   "Blue: % CPU, axis max \(Int(cpuAxis))%".draw(at: NSPoint(x: 58, y: bounds.height - 42), withAttributes: legendAttrs)
-                  "Red: Memory, axis max \(Int(rssAxis)) MB".draw(at: NSPoint(x: 310, y: bounds.height - 42), withAttributes: legendAttrs)
-                  "Samples: \(cpuSamples.count)".draw(at: NSPoint(x: 590, y: bounds.height - 42), withAttributes: legendAttrs)
+                  "Red: Activity Monitor Memory, axis max \(Int(memoryAxis)) MB".draw(at: NSPoint(x: 310, y: bounds.height - 42), withAttributes: legendAttrs)
+                  "Samples: \(cpuSamples.count)".draw(at: NSPoint(x: 720, y: bounds.height - 42), withAttributes: legendAttrs)
               }
           }
 
@@ -145,7 +182,7 @@ jobs:
               var workloadMemory: [Data] = []
               var level = 1
               var cpuWorkloadActive = false
-              var lastMetrics = readProcessMetrics()
+              var lastMetrics = readActivityMetrics()
               var lastTime = DispatchTime.now()
 
               func applicationDidFinishLaunching(_ notification: Notification) {
@@ -166,28 +203,28 @@ jobs:
               }
 
               func buildWindow() {
-                  window = NSWindow(contentRect: NSRect(x: 70, y: 80, width: 1280, height: 820), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-                  window.title = "Activity Monitor Match - Enterprise Workload Level \(level) - PID \(getpid())"
-                  window.minSize = NSSize(width: 1050, height: 700)
+                  window = NSWindow(contentRect: NSRect(x: 70, y: 80, width: 1320, height: 850), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+                  window.title = "Activity Monitor Match - EnterpriseDownloadableApp - PID \(getpid()) - Level \(level)"
+                  window.minSize = NSSize(width: 1100, height: 720)
 
-                  root = NSView(frame: NSRect(x: 0, y: 0, width: 1280, height: 820))
-                  let sidebar = NSBox(frame: NSRect(x: 16, y: 54, width: 235, height: 740))
+                  root = NSView(frame: NSRect(x: 0, y: 0, width: 1320, height: 850))
+                  let sidebar = NSBox(frame: NSRect(x: 16, y: 54, width: 245, height: 770))
                   sidebar.title = "Controls"
                   root.addSubview(sidebar)
 
-                  addButton("Live metrics", y: 660, action: #selector(showMetrics), parent: sidebar.contentView!)
-                  addButton("Users table", y: 610, action: #selector(showUsers), parent: sidebar.contentView!)
-                  addButton("Start CPU load", y: 540, action: #selector(startCPULoad), parent: sidebar.contentView!)
-                  addButton("Stop CPU load", y: 490, action: #selector(stopCPULoad), parent: sidebar.contentView!)
-                  addButton("Allocate +128 MB", y: 420, action: #selector(allocateMemory), parent: sidebar.contentView!)
-                  addButton("Free extra memory", y: 370, action: #selector(freeMemory), parent: sidebar.contentView!)
-                  addButton("Shuffle table", y: 300, action: #selector(shuffleTable), parent: sidebar.contentView!)
+                  addButton("Live metrics", y: 690, action: #selector(showMetrics), parent: sidebar.contentView!)
+                  addButton("Users table", y: 640, action: #selector(showUsers), parent: sidebar.contentView!)
+                  addButton("Start CPU load", y: 570, action: #selector(startCPULoad), parent: sidebar.contentView!)
+                  addButton("Stop CPU load", y: 520, action: #selector(stopCPULoad), parent: sidebar.contentView!)
+                  addButton("Allocate +128 MB", y: 450, action: #selector(allocateMemory), parent: sidebar.contentView!)
+                  addButton("Free extra memory", y: 400, action: #selector(freeMemory), parent: sidebar.contentView!)
+                  addButton("Shuffle table", y: 330, action: #selector(shuffleTable), parent: sidebar.contentView!)
 
-                  status.frame = NSRect(x: 270, y: 18, width: 950, height: 24)
+                  status.frame = NSRect(x: 280, y: 18, width: 980, height: 24)
                   status.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
                   root.addSubview(status)
 
-                  content = NSView(frame: NSRect(x: 270, y: 54, width: 980, height: 740))
+                  content = NSView(frame: NSRect(x: 280, y: 54, width: 1000, height: 770))
                   root.addSubview(content)
                   window.contentView = root
                   window.makeKeyAndOrderFront(nil)
@@ -195,7 +232,7 @@ jobs:
 
               func addButton(_ title: String, y: CGFloat, action: Selector, parent: NSView) {
                   let button = NSButton(title: title, target: self, action: action)
-                  button.frame = NSRect(x: 18, y: y, width: 190, height: 34)
+                  button.frame = NSRect(x: 18, y: y, width: 200, height: 34)
                   button.bezelStyle = .rounded
                   parent.addSubview(button)
               }
@@ -211,15 +248,15 @@ jobs:
 
               @objc func showMetrics() {
                   clearContent()
-                  chart = LiveChartView(frame: NSRect(x: 0, y: 20, width: 960, height: 700))
+                  chart = LiveChartView(frame: NSRect(x: 0, y: 20, width: 980, height: 730))
                   content.addSubview(chart)
-                  status.stringValue = "Open Activity Monitor, search EnterpriseDownloadableApp or PID \(getpid()). Compare % CPU and Memory columns."
+                  status.stringValue = "Open Activity Monitor, search PID \(getpid()). Compare % CPU and Memory. Memory here uses physical footprint."
               }
 
               @objc func showUsers() {
                   clearContent()
-                  content.addSubview(label("Users and access table", NSRect(x: 0, y: 690, width: 600, height: 30), bold: true, size: 24))
-                  let scroll = NSScrollView(frame: NSRect(x: 0, y: 70, width: 930, height: 600))
+                  content.addSubview(label("Users and access table", NSRect(x: 0, y: 720, width: 600, height: 30), bold: true, size: 24))
+                  let scroll = NSScrollView(frame: NSRect(x: 0, y: 70, width: 950, height: 620))
                   table = NSTableView(frame: scroll.bounds)
                   let cols = [("id", "User ID", 140), ("name", "Name", 260), ("role", "Role", 150), ("status", "Status", 150), ("device", "Device", 190)]
                   for c in cols {
@@ -240,11 +277,11 @@ jobs:
               }
 
               func startSampling() {
-                  lastMetrics = readProcessMetrics()
+                  lastMetrics = readActivityMetrics()
                   lastTime = DispatchTime.now()
                   Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
                       let now = DispatchTime.now()
-                      let current = readProcessMetrics()
+                      let current = readActivityMetrics()
                       let wallNs = now.uptimeNanoseconds - self.lastTime.uptimeNanoseconds
                       let cpuNs = current.cpuTimeNs >= self.lastMetrics.cpuTimeNs ? current.cpuTimeNs - self.lastMetrics.cpuTimeNs : 0
                       let cpuPercent = wallNs > 0 ? Double(cpuNs) / Double(wallNs) * 100.0 : 0.0
@@ -253,17 +290,18 @@ jobs:
                       self.lastTime = now
 
                       self.chart.latestCPU = cpuPercent
-                      self.chart.latestRSS = current.residentMB
+                      self.chart.latestActivityMemory = current.activityMemoryMB
+                      self.chart.latestRSS = current.rssMB
                       self.chart.latestVirtual = current.virtualMB
                       self.chart.latestThreads = current.threads
                       self.chart.latestRunning = current.runningThreads
                       self.chart.cpuSamples.append(cpuPercent)
-                      self.chart.rssSamples.append(current.residentMB)
+                      self.chart.memorySamples.append(current.activityMemoryMB)
                       if self.chart.cpuSamples.count > 90 { self.chart.cpuSamples.removeFirst() }
-                      if self.chart.rssSamples.count > 90 { self.chart.rssSamples.removeFirst() }
+                      if self.chart.memorySamples.count > 90 { self.chart.memorySamples.removeFirst() }
                       self.chart.needsDisplay = true
 
-                      self.status.stringValue = String(format: "PID %d | %% CPU %.1f | Memory %.1f MB | Virtual %.1f MB | Threads %d | Running %d | Activity Monitor should be close, allowing for sample timing.", getpid(), cpuPercent, current.residentMB, current.virtualMB, current.threads, current.runningThreads)
+                      self.status.stringValue = String(format: "PID %d | %% CPU %.1f | Activity Monitor Memory %.1f MB | RSS %.1f MB | Threads %d | Running %d", getpid(), cpuPercent, current.activityMemoryMB, current.rssMB, current.threads, current.runningThreads)
                   }
               }
 
@@ -297,7 +335,7 @@ jobs:
 
               @objc func freeMemory() {
                   workloadMemory.removeAll(keepingCapacity: false)
-                  status.stringValue = "Freed extra workload memory. Memory may drop after allocator/OS accounting catches up."
+                  status.stringValue = "Freed extra workload memory. Memory may fall after allocator/OS accounting catches up."
               }
 
               @objc func shuffleTable() {
@@ -334,8 +372,8 @@ jobs:
             <key>CFBundleIdentifier</key><string>com.wostgit.macappstester.downloadable.level${LEVEL}</string>
             <key>CFBundleName</key><string>${APP_NAME}</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>1.3</string>
-            <key>CFBundleVersion</key><string>4</string>
+            <key>CFBundleShortVersionString</key><string>1.4</string>
+            <key>CFBundleVersion</key><string>5</string>
             <key>LSMinimumSystemVersion</key><string>13.0</string>
             <key>NSPrincipalClass</key><string>NSApplication</string>
           </dict>
@@ -352,7 +390,9 @@ jobs:
             1. Open this app.
             2. Open Activity Monitor.
             3. Search for EnterpriseDownloadableApp or the PID shown in the app title/status line.
-            4. Compare % CPU and Memory. Values should be close, but may differ slightly because Activity Monitor and this app sample on different one-second boundaries.
+            4. Compare % CPU and Memory.
+
+          The app's main memory number uses rusage_info_v4.ri_phys_footprint, which should be much closer to Activity Monitor's Memory column than RSS.
           README
 
           xcrun swiftc EnterpriseDownloadableApp.swift -framework AppKit -O -o "$APP_ROOT/Contents/MacOS/EnterpriseDownloadableApp"
@@ -408,7 +448,7 @@ jobs:
             "open_script": "$RESULT_DIR/open-after-download.sh",
             "signature": "ad-hoc signed with codesign --sign -",
             "notarized": False,
-            "features": ["Activity Monitor-style live numbers", "proc_pidinfo PROC_PIDTASKINFO CPU and memory", "visible numeric CPU and memory labels", "live in-app graph", "real CPU and memory workload controls"]
+            "features": ["Activity Monitor Memory uses physical footprint", "RSS also shown separately", "visible numeric CPU and memory labels", "live CPU and memory graph", "real CPU and memory workload controls"]
           }
           open("$RESULT_DIR/app.json", "w").write(json.dumps(data, indent=2, sort_keys=True))
           PY
@@ -463,7 +503,7 @@ jobs:
           with out.open("w") as f:
               f.write("# macOS Enterprise UI Downloadable App Bundles\n\n")
               f.write(f"Total app bundles: {len(rows)}\n\n")
-              f.write("Version 1.3 shows Activity Monitor-style live process metrics in the app. CPU uses `proc_pidinfo(PROC_PIDTASKINFO)` `pti_total_user + pti_total_system` deltas. Memory uses `pti_resident_size`. Open Activity Monitor, search by PID or EnterpriseDownloadableApp, and compare `% CPU` and `Memory`. Slight differences are expected due to different one-second sample boundaries.\n\n")
+              f.write("Version 1.4 changes memory matching: the big memory number and red graph now use physical footprint from `proc_pid_rusage(...).ri_phys_footprint`, which should match Activity Monitor's Memory column far better than RSS. RSS is still shown separately for debugging.\n\n")
               f.write("| Runner | macOS | Level | Rows | Memory MB | App zip | Size bytes | SHA-256 | Preview | Open script |\n")
               f.write("|---|---|---:|---:|---:|---|---:|---|---|---|\n")
               for r in rows:
@@ -482,6 +522,6 @@ jobs:
             echo "No downloadable app changes to commit."
             exit 0
           fi
-          git commit -m "Add Activity Monitor style downloadable macOS app bundles"
+          git commit -m "Add Activity Monitor memory matching macOS app bundles"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
