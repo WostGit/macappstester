@@ -1,0 +1,10 @@
+process=App
+window=UICorrectness fake-static PID 6318
+button=Start CPU
+button=Stop CPU
+button=+128 MB
+button=missing value
+button=missing value
+button=missing value
+text=UICorrectness fake-static PID 6318
+

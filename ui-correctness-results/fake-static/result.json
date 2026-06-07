@@ -1,0 +1,27 @@
+{
+  "mode": "fake-static",
+  "buttons": [
+    "Start CPU",
+    "Stop CPU",
+    "+128 MB",
+    "missing value",
+    "missing value",
+    "missing value"
+  ],
+  "before_cpu": 0.02697574383528052,
+  "after_cpu": 0.006329135311002718,
+  "before_mem": 136.73614501953125,
+  "after_mem": 296.4395751953125,
+  "checks": {
+    "has_start_button": true,
+    "has_memory_button": true,
+    "cpu_rose_after_click": false,
+    "memory_rose_after_click": true,
+    "has_samples_header": true,
+    "has_enough_samples": true,
+    "screenshots_exist": true,
+    "negative_control_expected_fail": true
+  },
+  "score": 6,
+  "passed": false
+}

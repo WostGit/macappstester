@@ -1,0 +1,24 @@
+{
+  "mode": "non-clickable",
+  "buttons": [
+    "missing value",
+    "missing value",
+    "missing value"
+  ],
+  "before_cpu": 0.00965104823622828,
+  "after_cpu": 0.006708706722628355,
+  "before_mem": 136.314208984375,
+  "after_mem": 136.392333984375,
+  "checks": {
+    "has_start_button": false,
+    "has_memory_button": false,
+    "cpu_rose_after_click": false,
+    "memory_rose_after_click": false,
+    "has_samples_header": true,
+    "has_enough_samples": true,
+    "screenshots_exist": true,
+    "negative_control_expected_fail": true
+  },
+  "score": 3,
+  "passed": true
+}

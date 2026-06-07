@@ -1,0 +1,80 @@
+[
+  {
+    "mode": "fake-static",
+    "buttons": [
+      "Start CPU",
+      "Stop CPU",
+      "+128 MB",
+      "missing value",
+      "missing value",
+      "missing value"
+    ],
+    "before_cpu": 0.02697574383528052,
+    "after_cpu": 0.006329135311002718,
+    "before_mem": 136.73614501953125,
+    "after_mem": 296.4395751953125,
+    "checks": {
+      "has_start_button": true,
+      "has_memory_button": true,
+      "cpu_rose_after_click": false,
+      "memory_rose_after_click": true,
+      "has_samples_header": true,
+      "has_enough_samples": true,
+      "screenshots_exist": true,
+      "negative_control_expected_fail": true
+    },
+    "score": 6,
+    "passed": false
+  },
+  {
+    "mode": "non-clickable",
+    "buttons": [
+      "missing value",
+      "missing value",
+      "missing value"
+    ],
+    "before_cpu": 0.00965104823622828,
+    "after_cpu": 0.006708706722628355,
+    "before_mem": 136.314208984375,
+    "after_mem": 136.392333984375,
+    "checks": {
+      "has_start_button": false,
+      "has_memory_button": false,
+      "cpu_rose_after_click": false,
+      "memory_rose_after_click": false,
+      "has_samples_header": true,
+      "has_enough_samples": true,
+      "screenshots_exist": true,
+      "negative_control_expected_fail": true
+    },
+    "score": 3,
+    "passed": true
+  },
+  {
+    "mode": "real-graph",
+    "buttons": [
+      "Start CPU",
+      "Stop CPU",
+      "+128 MB",
+      "missing value",
+      "missing value",
+      "missing value"
+    ],
+    "before_cpu": 0.015952519841215176,
+    "after_cpu": 0.015465829654689057,
+    "before_mem": 135.78302001953125,
+    "after_mem": 295.79901123046875,
+    "checks": {
+      "has_start_button": true,
+      "has_memory_button": true,
+      "cpu_rose_after_click": false,
+      "memory_rose_after_click": true,
+      "has_samples_header": true,
+      "has_enough_samples": true,
+      "screenshots_exist": true,
+      "negative_control_expected_fail": false
+    },
+    "score": 6,
+    "passed": true
+  }
+]

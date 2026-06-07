@@ -1,0 +1,9 @@
+process=App
+window=UICorrectness non-clickable PID 9767
+button=missing value
+button=missing value
+button=missing value
+text=Start CPU
+text=+128 MB
+text=UICorrectness non-clickable PID 9767
+
