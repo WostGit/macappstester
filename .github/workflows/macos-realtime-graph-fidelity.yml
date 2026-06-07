@@ -81,21 +81,76 @@ jobs:
           python3 - <<'PY'
           import csv, json, statistics
           from pathlib import Path
-          root=Path('realtime-graph-fidelity-results'); rows=[]
+          root = Path('realtime-graph-fidelity-results')
+          rows = []
+          diagnostics = []
+          def read_csv(path):
+              with open(path, newline='') as f:
+                  reader = csv.DictReader(f)
+                  data = []
+                  for row in reader:
+                      clean = {(k or '').strip(): (v or '').strip() for k, v in row.items()}
+                      data.append(clean)
+                  return data, [(x or '').strip() for x in (reader.fieldnames or [])]
           for d in sorted([p for p in root.iterdir() if p.is_dir()]):
-            app=list(csv.DictReader(open(d/'app-samples.csv'))); ps=list(csv.DictReader(open(d/'ps-samples.csv')))
-            n=min(len(app),len(ps)); cpu_err=[abs(float(app[i]['app_cpu_percent'])-float(ps[i]['ps_cpu_percent'])) for i in range(n)]
-            mem_gap=[abs(float(app[i]['app_memory_mb'])-float(ps[i]['ps_rss_mb'])) for i in range(n)]
-            avg_cpu=float(statistics.mean([float(x['app_cpu_percent']) for x in app]))
-            score=round(statistics.mean(cpu_err)+0.02*avg_cpu+0.005*statistics.mean(mem_gap),3)
-            rows.append({'mode':d.name,'samples':n,'cpu_mae':round(statistics.mean(cpu_err),3),'memory_gap_vs_ps_rss_mb':round(statistics.mean(mem_gap),3),'avg_app_cpu':round(avg_cpu,3),'score':score})
-          rows.sort(key=lambda r:r['score'])
-          (root/'rankings.json').write_text(json.dumps(rows,indent=2))
-          with open(root/'rankings.csv','w',newline='') as f: w=csv.DictWriter(f,fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
-          with open(root/'summary.md','w') as f:
-            f.write('# Realtime Graph Fidelity Rankings\n\nLower score is better. CPU error compares in-app proc_taskinfo sampling against external `ps`; memory gap compares app physical footprint against `ps` RSS, so it is a diagnostic gap rather than exact Activity Monitor parity.\n\n')
-            f.write('| Rank | Mode | Samples | CPU MAE | Memory gap vs ps RSS MB | Avg app CPU | Score |\n|---:|---|---:|---:|---:|---:|---:|\n')
-            for i,r in enumerate(rows,1): f.write(f"| {i} | {r['mode']} | {r['samples']} | {r['cpu_mae']} | {r['memory_gap_vs_ps_rss_mb']} | {r['avg_app_cpu']} | {r['score']} |\n")
+              app_path = d / 'app-samples.csv'
+              ps_path = d / 'ps-samples.csv'
+              if not app_path.exists() or not ps_path.exists():
+                  diagnostics.append({'mode': d.name, 'status': 'missing csv', 'files': [p.name for p in d.iterdir()]})
+                  continue
+              app, app_fields = read_csv(app_path)
+              ps, ps_fields = read_csv(ps_path)
+              required_app = {'app_cpu_percent', 'app_memory_mb'}
+              required_ps = {'ps_cpu_percent', 'ps_rss_mb'}
+              if not required_app.issubset(set(app_fields)) or not required_ps.issubset(set(ps_fields)):
+                  diagnostics.append({'mode': d.name, 'status': 'bad headers', 'app_fields': app_fields, 'ps_fields': ps_fields})
+                  continue
+              n = min(len(app), len(ps))
+              if n <= 0:
+                  diagnostics.append({'mode': d.name, 'status': 'no samples', 'app_rows': len(app), 'ps_rows': len(ps)})
+                  continue
+              cpu_err = []
+              mem_gap = []
+              app_cpu_values = []
+              for i in range(n):
+                  try:
+                      ac = float(app[i]['app_cpu_percent'])
+                      pc = float(ps[i]['ps_cpu_percent'])
+                      am = float(app[i]['app_memory_mb'])
+                      pm = float(ps[i]['ps_rss_mb'])
+                  except Exception as e:
+                      diagnostics.append({'mode': d.name, 'status': 'bad row', 'row': i, 'error': str(e), 'app': app[i], 'ps': ps[i]})
+                      continue
+                  cpu_err.append(abs(ac - pc))
+                  mem_gap.append(abs(am - pm))
+                  app_cpu_values.append(ac)
+              if not cpu_err:
+                  diagnostics.append({'mode': d.name, 'status': 'no valid numeric rows'})
+                  continue
+              avg_cpu = float(statistics.mean(app_cpu_values))
+              score = round(statistics.mean(cpu_err) + 0.02 * avg_cpu + 0.005 * statistics.mean(mem_gap), 3)
+              rows.append({'mode': d.name, 'samples': len(cpu_err), 'cpu_mae': round(statistics.mean(cpu_err), 3), 'memory_gap_vs_ps_rss_mb': round(statistics.mean(mem_gap), 3), 'avg_app_cpu': round(avg_cpu, 3), 'score': score})
+          rows.sort(key=lambda r: r['score'])
+          (root / 'rankings.json').write_text(json.dumps(rows, indent=2))
+          (root / 'diagnostics.json').write_text(json.dumps(diagnostics, indent=2))
+          with open(root / 'rankings.csv', 'w', newline='') as f:
+              fieldnames = ['mode','samples','cpu_mae','memory_gap_vs_ps_rss_mb','avg_app_cpu','score']
+              w = csv.DictWriter(f, fieldnames=fieldnames)
+              w.writeheader()
+              w.writerows(rows)
+          with open(root / 'summary.md', 'w') as f:
+              f.write('# Realtime Graph Fidelity Rankings\n\n')
+              f.write('Lower score is better. CPU error compares in-app proc_taskinfo sampling against external `ps`; memory gap compares app physical footprint against `ps` RSS, so it is a diagnostic gap rather than exact Activity Monitor parity.\n\n')
+              if rows:
+                  f.write('| Rank | Mode | Samples | CPU MAE | Memory gap vs ps RSS MB | Avg app CPU | Score |\n|---:|---|---:|---:|---:|---:|---:|\n')
+                  for i, r in enumerate(rows, 1):
+                      f.write(f"| {i} | {r['mode']} | {r['samples']} | {r['cpu_mae']} | {r['memory_gap_vs_ps_rss_mb']} | {r['avg_app_cpu']} | {r['score']} |\n")
+              else:
+                  f.write('No valid modes could be ranked. See `diagnostics.json`.\n')
+              if diagnostics:
+                  f.write('\n## Diagnostics\n\n')
+                  for item in diagnostics:
+                      f.write(f"- `{item.get('mode')}`: {item.get('status')}\n")
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
