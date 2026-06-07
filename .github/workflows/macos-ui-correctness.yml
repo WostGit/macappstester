@@ -1,0 +1,154 @@
+name: macOS UI Correctness Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/macos-ui-correctness.yml"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  correctness:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [real-graph, fake-static, non-clickable]
+    env:
+      MODE: ${{ matrix.mode }}
+      OUT: ui-correctness-results/${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test UI correctness
+        run: |
+          set -euxo pipefail
+          mkdir -p "$OUT"
+          cat > app.swift <<'SWIFT'
+          import AppKit
+          import Darwin
+          func memMB() -> Double { var vm=task_vm_info_data_t(); var c=mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size/MemoryLayout<integer_t>.size); let r=withUnsafeMutablePointer(to:&vm){p in p.withMemoryRebound(to:integer_t.self,capacity:Int(c)){task_info(mach_task_self_,task_flavor_t(TASK_VM_INFO),$0,&c)}}; return r==KERN_SUCCESS ? Double(vm.phys_footprint)/1048576.0 : -1 }
+          func cpuNs() -> UInt64 { var t=proc_taskinfo(); let n=proc_pidinfo(getpid(),Int32(PROC_PIDTASKINFO),0,&t,Int32(MemoryLayout<proc_taskinfo>.stride)); return n>0 ? UInt64(t.pti_total_user)+UInt64(t.pti_total_system) : 0 }
+          final class Graph:NSView{var mode="real-graph";var cpu=[Double]();var mem=[Double]();var label="";override var isFlipped:Bool{true};override func draw(_ r:NSRect){NSColor.windowBackgroundColor.setFill();bounds.fill();let a:[NSAttributedString.Key:Any]=[.font:NSFont.monospacedDigitSystemFont(ofSize:18,weight:.semibold),.foregroundColor:NSColor.labelColor];label.draw(at:NSPoint(x:20,y:20),withAttributes:a);let plot=NSRect(x:30,y:145,width:bounds.width-60,height:bounds.height-180);NSColor.separatorColor.setStroke();NSBezierPath(rect:plot).stroke();if mode != "non-clickable"{func line(_ vals:[Double],_ maxv:Double,_ col:NSColor){guard vals.count>1 else{return};let p=NSBezierPath();for(i,v)in vals.enumerated(){let x=plot.minX+CGFloat(i)*plot.width/CGFloat(vals.count-1);let y=plot.maxY-CGFloat(min(max(v/maxv,0),1))*plot.height;i==0 ? p.move(to:NSPoint(x:x,y:y)) : p.line(to:NSPoint(x:x,y:y))};col.setStroke();p.lineWidth=3;p.stroke()};line(cpu,max(100,cpu.max() ?? 100),.systemBlue);line(mem,max(256,mem.max() ?? 256),.systemRed)}}}
+          final class D:NSObject,NSApplicationDelegate{let g=Graph();var keep=[Data]();var load=false;var last=cpuNs();var lastT=DispatchTime.now();var file:FileHandle?;var mode="real-graph";func applicationDidFinishLaunching(_ n:Notification){mode=ProcessInfo.processInfo.environment["MODE"] ?? "real-graph";g.mode=mode;let samples=ProcessInfo.processInfo.environment["SAMPLES"]!;FileManager.default.createFile(atPath:samples,contents:"second,cpu,memory,phase\n".data(using:.utf8));file=FileHandle(forWritingAtPath:samples);file?.seekToEndOfFile();for i in 0..<96{keep.append(Data(repeating:UInt8(i),count:1048576))};let w=NSWindow(contentRect:NSRect(x:80,y:80,width:900,height:600),styleMask:[.titled,.closable,.resizable],backing:.buffered,defer:false);w.title="UICorrectness \(mode) PID \(getpid())";let root=NSView(frame:NSRect(x:0,y:0,width:900,height:600));g.frame=NSRect(x:190,y:20,width:690,height:560);root.addSubview(g);if mode=="non-clickable"{let l1=NSTextField(labelWithString:"Start CPU");l1.frame=NSRect(x:25,y:500,width:130,height:30);root.addSubview(l1);let l2=NSTextField(labelWithString:"+128 MB");l2.frame=NSRect(x:25,y:450,width:130,height:30);root.addSubview(l2)}else{let b1=NSButton(title:"Start CPU",target:self,action:#selector(start));b1.frame=NSRect(x:25,y:500,width:130,height:32);root.addSubview(b1);let b2=NSButton(title:"Stop CPU",target:self,action:#selector(stop));b2.frame=NSRect(x:25,y:455,width:130,height:32);root.addSubview(b2);let b3=NSButton(title:"+128 MB",target:self,action:#selector(addMem));b3.frame=NSRect(x:25,y:410,width:130,height:32);root.addSubview(b3)};w.contentView=root;w.makeKeyAndOrderFront(nil);Timer.scheduledTimer(withTimeInterval:1,repeats:true){_ in self.sample()}}
+          var sec=0;var phase="idle";func sample(){sec+=1;let now=DispatchTime.now();let c=cpuNs();let wall=now.uptimeNanoseconds-lastT.uptimeNanoseconds;let pct=wall>0 ? Double(c-last)/Double(wall)*100:0;last=c;lastT=now;let m=memMB();if mode=="fake-static"{g.cpu.append(25);g.mem.append(180)}else{g.cpu.append(pct);g.mem.append(m)};if g.cpu.count>30{g.cpu.removeFirst();g.mem.removeFirst()};g.label=String(format:"mode %@\nPID %d\nCPU %.1f%%\nMemory %.1f MB\nphase %@",mode,getpid(),pct,m,phase);g.needsDisplay=true;file?.write("\(sec),\(pct),\(m),\(phase)\n".data(using:.utf8)!)}
+          @objc func start(){phase="cpu";load=true;DispatchQueue.global().async{var x=0.0;while self.load{for i in 1...200000{x += sqrt(Double(i))};if x>1e12{x=0}}}}
+          @objc func stop(){phase="stopped";load=false}
+          @objc func addMem(){phase="memory";for i in 0..<128{keep.append(Data(repeating:UInt8(i),count:1048576))}}
+          }
+          let app=NSApplication.shared;let d=D();app.delegate=d;app.setActivationPolicy(.regular);app.run()
+          SWIFT
+          APP="UICorrectness-${MODE}"
+          ROOT="$PWD/$APP.app"
+          mkdir -p "$ROOT/Contents/MacOS"
+          printf '%s' "<?xml version='1.0'?><plist version='1.0'><dict><key>CFBundleExecutable</key><string>App</string><key>CFBundleIdentifier</key><string>com.wostgit.uicorrect.$MODE</string><key>CFBundleName</key><string>$APP</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>" > "$ROOT/Contents/Info.plist"
+          xcrun swiftc app.swift -framework AppKit -O -o "$ROOT/Contents/MacOS/App"
+          codesign --force --deep --sign - "$ROOT"
+          SAMPLES="$PWD/$OUT/samples.csv" MODE="$MODE" open -n "$ROOT"
+          sleep 3
+          PID=$(pgrep -n App)
+          screencapture -x "$OUT/initial.png" || true
+          osascript > "$OUT/ax.txt" <<'OSA' || true
+          tell application "System Events"
+            set out to ""
+            repeat with p in application processes
+              if name of p is "App" then
+                set out to out & "process=" & name of p & linefeed
+                repeat with w in windows of p
+                  set out to out & "window=" & name of w & linefeed
+                  repeat with b in buttons of w
+                    set out to out & "button=" & name of b & linefeed
+                  end repeat
+                  repeat with t in static texts of w
+                    set out to out & "text=" & value of t & linefeed
+                  end repeat
+                end repeat
+              end if
+            end repeat
+            return out
+          end tell
+          OSA
+          BEFORE_CPU=$(tail -n +2 "$OUT/samples.csv" | tail -n 1 | cut -d, -f2 || echo 0)
+          BEFORE_MEM=$(tail -n +2 "$OUT/samples.csv" | tail -n 1 | cut -d, -f3 || echo 0)
+          osascript -e 'tell application "System Events" to tell process "App" to click button "Start CPU" of window 1' || true
+          sleep 4
+          CPU_AFTER=$(tail -n +2 "$OUT/samples.csv" | tail -n 1 | cut -d, -f2 || echo 0)
+          osascript -e 'tell application "System Events" to tell process "App" to click button "+128 MB" of window 1' || true
+          sleep 3
+          MEM_AFTER=$(tail -n +2 "$OUT/samples.csv" | tail -n 1 | cut -d, -f3 || echo 0)
+          screencapture -x "$OUT/after-actions.png" || true
+          osascript -e 'tell application "System Events" to tell process "App" to click button "Stop CPU" of window 1' || true
+          sleep 2
+          osascript -e 'tell application "UICorrectness-'"$MODE"'" to quit' || true
+          python3 - <<PY
+          import json, os, re
+          from pathlib import Path
+          out=Path("$OUT")
+          mode="$MODE"
+          ax=(out/'ax.txt').read_text(errors='ignore') if (out/'ax.txt').exists() else ''
+          buttons=re.findall(r'button=(.*)', ax)
+          before_cpu=float("$BEFORE_CPU" or 0); after_cpu=float("$CPU_AFTER" or 0)
+          before_mem=float("$BEFORE_MEM" or 0); after_mem=float("$MEM_AFTER" or 0)
+          samples=(out/'samples.csv').read_text(errors='ignore').splitlines() if (out/'samples.csv').exists() else []
+          checks={
+            'has_start_button':'Start CPU' in buttons,
+            'has_memory_button':'+128 MB' in buttons,
+            'cpu_rose_after_click': after_cpu > before_cpu + 10,
+            'memory_rose_after_click': after_mem > before_mem + 60,
+            'has_samples_header': bool(samples and samples[0].strip()=='second,cpu,memory,phase'),
+            'has_enough_samples': len(samples) >= 8,
+            'screenshots_exist': (out/'initial.png').exists() and (out/'after-actions.png').exists(),
+            'negative_control_expected_fail': mode in ['fake-static','non-clickable']
+          }
+          score=sum(1 for k,v in checks.items() if v and k!='negative_control_expected_fail')
+          expected_real = mode == 'real-graph'
+          passed = score >= 6 if expected_real else score < 6
+          data={'mode':mode,'buttons':buttons,'before_cpu':before_cpu,'after_cpu':after_cpu,'before_mem':before_mem,'after_mem':after_mem,'checks':checks,'score':score,'passed':passed}
+          (out/'result.json').write_text(json.dumps(data,indent=2))
+          PY
+          ditto -c -k --sequesterRsrc --keepParent "$ROOT" "$OUT/$APP.app.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-correctness-${{ matrix.mode }}
+          path: ui-correctness-results/
+
+  aggregate:
+    runs-on: ubuntu-latest
+    needs: correctness
+    if: always() && github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { token: "${{ secrets.GITHUB_TOKEN }}", fetch-depth: 0 }
+      - uses: actions/download-artifact@v4
+        with: { pattern: ui-correctness-*, path: downloaded, merge-multiple: true }
+      - name: Aggregate UI correctness
+        run: |
+          set -euxo pipefail
+          rm -rf ui-correctness-results
+          mkdir -p ui-correctness-results
+          if [ -d downloaded/ui-correctness-results ]; then cp -R downloaded/ui-correctness-results/. ui-correctness-results/; else cp -R downloaded/. ui-correctness-results/; fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('ui-correctness-results')
+          rows=[]
+          for p in sorted(root.glob('*/result.json')):
+            rows.append(json.loads(p.read_text()))
+          with (root/'summary.md').open('w') as f:
+            f.write('# macOS UI Correctness Results\n\n')
+            f.write('Tests: accessibility tree button checks, real button clicks, CPU rise, memory rise, sample header/count, screenshots. Negative controls should fail.\n\n')
+            f.write('| Mode | Passed expectation | Score | Buttons | CPU before/after | Memory before/after |\n|---|---:|---:|---|---:|---:|\n')
+            for r in rows:
+              f.write(f"| {r['mode']} | {r['passed']} | {r['score']} | {', '.join(r['buttons'])} | {r['before_cpu']:.1f} -> {r['after_cpu']:.1f} | {r['before_mem']:.1f} -> {r['after_mem']:.1f} |\n")
+          (root/'results.json').write_text(json.dumps(rows,indent=2))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ui-correctness-results/
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Add macOS UI correctness results"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
