@@ -1,1 +1,47 @@
-[]
+[
+  {
+    "mode": "appkit",
+    "samples": 12,
+    "cpu_mae": 0.071,
+    "memory_gap_vs_ps_rss_mb": 16.443,
+    "avg_app_cpu": 0.024,
+    "cpu_jitter": 0.052,
+    "score": 0.155
+  },
+  {
+    "mode": "numeric",
+    "samples": 12,
+    "cpu_mae": 0.228,
+    "memory_gap_vs_ps_rss_mb": 16.246,
+    "avg_app_cpu": 0.028,
+    "cpu_jitter": 0.059,
+    "score": 0.31
+  },
+  {
+    "mode": "heavy-redraw",
+    "samples": 16,
+    "cpu_mae": 97.568,
+    "memory_gap_vs_ps_rss_mb": 16.283,
+    "avg_app_cpu": 2.401,
+    "cpu_jitter": 0.02,
+    "score": 97.697
+  },
+  {
+    "mode": "burst-redraw",
+    "samples": 15,
+    "cpu_mae": 98.219,
+    "memory_gap_vs_ps_rss_mb": 16.461,
+    "avg_app_cpu": 2.415,
+    "cpu_jitter": 0.013,
+    "score": 98.349
+  },
+  {
+    "mode": "memory-churn",
+    "samples": 16,
+    "cpu_mae": 98.648,
+    "memory_gap_vs_ps_rss_mb": 207.523,
+    "avg_app_cpu": 2.427,
+    "cpu_jitter": 0.015,
+    "score": 99.735
+  }
+]
