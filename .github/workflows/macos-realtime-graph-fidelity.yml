@@ -72,7 +72,12 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf realtime-graph-fidelity-results
-          cp -R downloaded/realtime-graph-fidelity-results realtime-graph-fidelity-results
+          mkdir -p realtime-graph-fidelity-results
+          if [ -d downloaded/realtime-graph-fidelity-results ]; then
+            cp -R downloaded/realtime-graph-fidelity-results/. realtime-graph-fidelity-results/
+          else
+            cp -R downloaded/. realtime-graph-fidelity-results/
+          fi
           python3 - <<'PY'
           import csv, json, statistics
           from pathlib import Path
